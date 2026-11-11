@@ -1,0 +1,19 @@
+.DS_Store
+/.build
+/Packages
+xcuserdata/
+DerivedData/
+.swiftpm/configuration/registries.json
+.swiftpm/xcode/package.xcworkspace/contents.xcworkspacedata
+.netrc
+
+# xtool build output
+/xtool
+
+# Core package build output
+/Core/.build
+
+# Node (js/ test project)
+node_modules/
+# Fixtures captured while signed in contain account data: never commit them.
+/js/fixtures/local/

@@ -1,0 +1,4 @@
+version: 1
+bundleID: com.example.YTadless
+# Partial Info.plist, merged over xtool's generated defaults (our keys win).
+infoPath: Config/Info.plist
