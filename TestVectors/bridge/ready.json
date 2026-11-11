@@ -1,0 +1,7 @@
+{
+  "type": "ready",
+  "description": "Posted by bridge.js once per document (every frame), right after __ytadless is installed.",
+  "optional": [],
+  "enums": { "role": ["browse", "player"] },
+  "body": { "v": 1, "type": "ready", "frame": "main", "role": "player", "url": "https://m.youtube.com/watch?v=dQw4w9WgXcQ" }
+}

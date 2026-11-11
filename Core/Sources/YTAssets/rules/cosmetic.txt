@@ -1,0 +1,5 @@
+! rules/cosmetic.txt — element hiding rules. Owner: Module A (PLAN.md §5.6, §6.1).
+!
+! `domain##selector` or `##selector`, compiled to css-display-none (D9). `!` starts a comment.
+! Unsupported (a diagnostic, which fails `swift test`): ##+js(…), #?#, :has-text(), #@#.
+! WebKit silently drops a rule whose selector is invalid, so the compiler validates selectors.

@@ -9,8 +9,10 @@ architecture, module ownership, interfaces and build order; read it before chang
 
 - WSL2 Linux on Windows. **No Xcode, no simulator, no Mac, no Safari Web Inspector.**
 - Swift 6.4.2 (swiftly), xtool 1.24.0, Darwin SDK with **iPhoneOS 27.1**. Device: iPhone on iOS 27.2.
-- Node is **not installed yet**. Install a current LTS (≥ 22) in WSL before running the JS tests
-  (for example `fnm install --lts`). The JS tests use `node --test`, and jsdom is the only dev dependency.
+- Node 26.13.1 LTS is installed with fnm (`~/.local/share/fnm`, set up in `~/.bashrc`). In a
+  non-interactive shell, first run `export PATH="$HOME/.local/share/fnm:$PATH"; eval "$(fnm env --shell bash)"`.
+  The JS tests use `node --test`, and jsdom (pinned in `js/package.json`) is the only dev dependency.
+  Run `npm ci` in `js/` once per checkout.
 - The repo is on `/mnt/c` (slow 9P filesystem). Builds work but are slower than under `~/`.
 
 ## Commands

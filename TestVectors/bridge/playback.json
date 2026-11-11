@@ -1,0 +1,8 @@
+{
+  "type": "playback",
+  "description": "player-bridge.js, about 1 Hz while playing plus on every state change. duration and videoId are null (or absent) when unknown, e.g. a NaN duration before metadata.",
+  "optional": ["duration", "videoId"],
+  "enums": { "status": ["idle", "loading", "playing", "paused", "buffering", "ended"] },
+  "body": { "v": 1, "type": "playback", "frame": "main", "status": "playing", "position": 12.5, "duration": 213.1, "rate": 1, "videoId": "dQw4w9WgXcQ" },
+  "minimal": { "v": 1, "type": "playback", "frame": "main", "status": "loading", "position": 0, "duration": null, "rate": 1 }
+}

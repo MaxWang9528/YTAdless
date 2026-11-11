@@ -1,0 +1,17 @@
+{
+  "name": "ytadless-js-tests",
+  "private": true,
+  "description": "Off-device tests for the injected scripts (PLAN.md §7 tier 2). Nothing in js/ ships.",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test \"test/**/*.test.mjs\"",
+    "report": "node tools/report.mjs",
+    "capture": "node tools/capture.mjs"
+  },
+  "devDependencies": {
+    "jsdom": "31.0.0"
+  }
+}

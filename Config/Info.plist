@@ -9,6 +9,11 @@
 	<array>
 		<string>audio</string>
 	</array>
+	<!-- Debug › Capture writes to Documents; these expose it in Files and the Windows Apple Devices app (PLAN.md §6.2). -->
+	<key>UIFileSharingEnabled</key>
+	<true/>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<true/>
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>

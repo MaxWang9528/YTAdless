@@ -1,7 +1,9 @@
 # YTadless: Plan
 
-Status (2026-11-11): plan and scaffold only. No app code yet. Read CLAUDE.md first; it holds the
-conventions and the decisions this plan relies on (D1, D2, … below refer to CLAUDE.md §Decisions).
+Status (2026-11-11): Phase 0 implemented (contracts, bridge, harness, minimal app); `swift test`,
+`npm test` and `xtool dev build` are green. The `phase0` tag waits for the device check in §8 step 8.
+Read CLAUDE.md first; it holds the conventions and the decisions this plan relies on (D1, D2, …
+below refer to CLAUDE.md §Decisions).
 
 ## 1. What we're building
 
@@ -29,7 +31,7 @@ downloads, distribution, iPad-specific UI.
 | F2 | xtool walks SwiftPM dependencies and copies each resource bundle (`<Package>_<Target>.bundle`) into the `.app`. `Bundle.module` resolves it through `Bundle.main.resourceURL`. Local path packages work. | Scripts and rules ship as resources of a `YTAssets` target in the Core package. | Test project built with `xtool dev build`. Bundle present in `.app`; accessor inspected |
 | F3 | `swift test` builds **every** target in a package. An iOS target that imports SwiftUI fails on Linux (`no such module 'SwiftUI'`). | Pure logic lives in a **separate local package** `Core/` (D3). `swift test --package-path Core` passed on Linux, including `Bundle.module` resource loading. | Ran both in the scratchpad |
 | F4 | Toolchain: Swift 6.4.2, xtool 1.24.0, iOS SDK **27.1**, device iOS 27.2. | Deployment target `iOS 26.0` (D18). | `xtool sdk status`, SDKSettings.json |
-| F5 | **Node is not installed** in WSL. | It must be installed before the JS tests run (CLAUDE.md §Setup). | `which node` |
+| F5 | Node was not installed in WSL. | Installed 2026-11-11 with fnm: Node 26.13.1 LTS, npm 11.20. jsdom 31.0.0 is pinned in `js/package.json`. | `which node` |
 | F6 | uBO's m.youtube.com rules: `set ytInitialPlayerResponse.{adPlacements,playerAds,adSlots}`; `json-prune playerResponse.adPlacements … adSlots`; `json-prune-fetch-response` on `/player`, `/get_watch`, `resolve_url` (`endpoint.watchEndpoint.unserializedPrefetchData.playerResponse.*`); Shorts `entries.[-].command.reelWatchEndpoint.adClientParams.isAd` on `reel_watch_sequence`; `json-edit-fetch-response ..itemSectionRenderer.contents.*[?.adSlotRenderer]` on `/get_watch`. mweb routes watch-page navigations through **`/youtubei/v1/get_watch`**, which returns an array (`[].playerResponse…`). | These rules are the starting point for layer 2. The JSON path engine speaks uBO's `json-prune` dialect so upstream fixes port line by line (D8). | `uAssets/filters/filters.txt`, `quick-fixes.txt` |
 | F7 | EasyList's m.youtube.com cosmetic rules: `ytm-companion-slot[data-content-type] > ytm-companion-ad-renderer`, `ytm-rich-item-renderer > ad-slot-renderer`, `lazy-list > ad-slot-renderer`. | Starting content for `rules/cosmetic.txt`. | `easylist_specific_hide.txt` |
 | F8 | WKContentRuleList: actions `block`, `block-cookies`, `css-display-none`, `ignore-previous-rules`, `make-https`. **At most one condition per trigger** (`if-domain`/`unless-domain`/`if-top-url`/`unless-top-url`). Domains must be lowercase ASCII. The regex subset has no `\|` and no `{n}`. **A `css-display-none` rule with an invalid selector is silently skipped.** | The Swift RuleCompiler validates rules itself, and unsupported or invalid syntax fails the tests (D9). | WebKit `ContentExtensionParser.cpp`, `ContentExtensionError.cpp` |
@@ -78,7 +80,7 @@ YTadless/
 │   ├── App/               P0   YTadlessApp, AppServices (composition root), RootView
 │   ├── Shared/            P0   PlayerSession, BridgeEventHub, PlayerControlling, WebViewContainer
 │   ├── Web/               B    WebViewStore, configuration, navigation/UI delegates, rule-list loader
-│   ├── Debug/             B    log store + viewer, capture/export
+│   ├── Debug/             B    DebugEntryView (RootView's overlay slot), log store + viewer, capture/export
 │   ├── Player/            C    PlayerLayoutView and everything it uses
 │   └── Media/             D    MediaCoordinator, audio session, lifecycle, PiP glue, (fallback) NowPlaying
 ├── Core/                       SwiftPM package "YTCore". No UIKit/WebKit/AVFoundation.
@@ -108,7 +110,12 @@ YTadless/
 
 1. A module edits only the paths it owns. Phase-0 files are **frozen** once Phase 0 is merged:
    `Package.swift` (both), `xtool.yml`, `Config/Info.plist`, `App/`, `Shared/`, `Bridge/`,
-   `Scripts/`, `manifest.json`, `bridge.js`, `js/package.json`, `js/test/harness.mjs`.
+   `Scripts/`, `manifest.json`, `bridge.js`, `YTAssets.swift`, `js/package.json` (and its
+   lockfile), `js/test/harness.mjs`, plus the contract type files inside owner directories:
+   `Routing/RoutingTypes.swift`, `Playback/PlaybackTypes.swift`, `Playback/PlaybackState.swift`,
+   `Presentation/PlayerPresentation.swift`, and `Rules/RuleTypes.swift`. So are the P0 test files
+   `js/test/{smoke,bridge,harness,vectors}.test.mjs`; `js/test/player-bridge.test.mjs` belongs to D
+   with its script. P0's Swift test files fall under the add-only rule for `Core/Tests/YTCoreTests/`.
 2. "P0 → X" means Phase 0 writes a first version and X owns the file from then on.
 3. Shared directories (`TestVectors/`, `js/fixtures/`, `Core/Tests/YTCoreTests/`) are
    **add-only**. Add new files; never modify or delete a file another module created.
@@ -122,9 +129,16 @@ YTadless/
 Swift (`ScriptManifest`) and the Node harness both read this file, so the device and the tests
 load the same scripts in the same order. All scripts run in the **page** content world (D5).
 
+`manifest.json` lists the **10 files** below (#1–#10). The config prelude (#0) is generated, not
+a file, so it is not a manifest entry: both loaders always put it first.
+`ScriptManifest.injectionPlan(for:debug:build:load:)` (Swift) and `injectionPlan()` (harness)
+build the same list, `[prelude.js, …entries(for: role)]`. Each source gets a
+`//# sourceURL=ytadless/<file>` line appended, so device stacks name the file. `problems()`
+checks the structure: bridge.js first, unique plain `.js` names, non-empty roles, known owners.
+
 | # | file | roles | injection | frames | owner |
 |---|------|-------|-----------|--------|-------|
-| 0 | *(generated config prelude)* | both | start | all | P0 |
+| 0 | *(generated config prelude, `prelude.js`; not in manifest.json)* | both | start | all | P0 |
 | 1 | bridge.js | both | start | all | P0 |
 | 2 | debug.js | both | start | all | B |
 | 3 | hooks.js | both | start | all | A |
@@ -141,20 +155,33 @@ load the same scripts in the same order. All scripts run in the **page** content
   "scripts": [ { "file": "bridge.js", "roles": ["browse","player"], "injection": "start", "mainFrameOnly": false, "owner": "P0" } ] }
 ```
 
+`frames: all` maps to `mainFrameOnly: false`. In manifest.json, `owner` is the module that owns
+the file *now*, so player-bridge.js says `"D"`.
+
+**The prelude** (`ScriptConfig.prelude(role:debug:build:)`) is the only JS that native code
+generates. It defines a placeholder `window.__ytadless = {config}` (non-enumerable, configurable),
+which bridge.js replaces with the frozen runtime. Its one data slot is
+`{"build":…,"debug":…,"role":…}`, written by `ScriptConfig.jsonString`, which mirrors
+`JSON.stringify` exactly. `TestVectors/prelude.json` pins the exact bytes, and both generators are
+tested against it.
+
 ### 5.2 In-page runtime: `window.__ytadless` (bridge.js, P0)
 
 A non-enumerable, frozen namespace. The name is a single constant in bridge.js and ScriptConfig.
 
 | member | purpose |
 |---|---|
-| `config` | `{role: 'browse'\|'player', debug: bool, build: string}`, from the generated prelude |
-| `post(type, payload)` | `webkit.messageHandlers.ytadless.postMessage({v:1, type, frame:'main'\|'sub', ...payload})`; no-op when the handler is missing (tests use a fake) |
-| `on(evt, fn)` / `emit(evt, data)` | event bus between scripts in the page |
-| `command(name, fn)` | registers a native→JS command handler; each name has exactly one owner (§5.4) |
-| `cmd(name, argsJSON)` | entry point for native code; returns a JSON-safe result or `{error}`; never throws |
-| `log(level, source, ...args)` | posts `log` |
-| `guard(source, fn)` | runs `fn` and reports exceptions as `scriptError`; every script body runs inside it |
-| `hooks` | set by hooks.js (A): `addPruner({name, urls?, paths?, fn?})`, `originals` (debug ring buffer of pre-prune responses) |
+| `config` | frozen `{role: 'browse'\|'player', debug: bool, build: string}` from the prelude; `{browse, false, 'unknown'}` if the prelude is missing |
+| `post(type, payload) → bool` | `webkit.messageHandlers.ytadless.postMessage({...payload, v:1, type, frame:'main'\|'sub'})`. The payload goes through a JSON round trip with the *original* `JSON` functions (captured before hooks.js wraps them): functions and `undefined` are dropped, NaN/Infinity become `null`, and a cyclic payload becomes `{}`. `v`/`type`/`frame` can't be overridden. Returns false (never throws) when the handler is missing or the post fails |
+| `on(evt, fn) → off()` / `emit(evt, ...args) → count` | event bus between scripts in the page. `emit` passes every argument (`playerResponse` has two). Each listener runs inside `guard('on:<evt>')`, so a throwing listener doesn't stop the others |
+| `command(name, fn) → bool` | registers the one native→JS handler for `name` (§5.4). `fn(args)` gets the parsed args object and may return a value or a promise. A second registration is refused and reported |
+| `cmd(name, argsJSON)` | entry point for native code. Parses `argsJSON` (a non-object becomes `{}`), awaits a promise result, returns the JSON-sanitized result (`undefined` → `null`) or `{error: string}` (`unknown-command: x`, `invalid-args`, or the thrown error as `Name: message`, which is also reported as `scriptError` from `cmd:<name>`). Never throws |
+| `log(level, source, ...args)` | posts `log`. Args are joined with spaces (Errors as `Name: message`, objects as JSON). An unknown level becomes `info`. `debug` is dropped unless `config.debug` |
+| `guard(source, fn) → fn()` | runs `fn` and returns its result; a throw (→ `undefined`) or a rejected returned promise is posted as `scriptError` (at most 50 per source per document). Every script body runs inside it; wrap callbacks too: `el.addEventListener('x', (e) => ns.guard(SOURCE, () => …))` |
+| `hooks` | a **set-once** slot (the namespace itself is frozen): hooks.js (A) assigns `{addPruner({name, urls?, paths?, fn?}), originals}` (`originals` = debug ring buffer of pre-prune responses); a later assignment is refused and reported. Undefined until hooks.js runs, so readers check it |
+
+`window.__ytadless` is non-enumerable, non-writable and non-configurable, and the object is
+frozen. If bridge.js runs a second time in the same document, it does nothing.
 
 In-page events:
 
@@ -183,11 +210,38 @@ the Node tests compare against.
 | `playback` | `status, position, duration?, rate, videoId?` | player-bridge.js (~1 Hz while playing, plus on every change) | `PlaybackState` |
 | `presentation` | `mode: 'inline'\|'pip'\|'fullscreen'` | player-bridge.js | `PlaybackState`; D (PiP restore → expand) |
 
+**Decoding** (`BridgeMessage.decode`). `isValidJSONObject` runs first, because on Darwin
+`JSONSerialization.data` raises an Objective-C exception (a crash) on NaN. The decoder then uses
+JSONDecoder with an envelope plus one payload struct per type. It throws `BridgeDecodingError`
+for: not an object (`notAnObject`); `v != 1` (`unsupportedVersion`); no `type` (`missingType`);
+`frame` not `main`/`sub` (`invalidFrame`); missing or mistyped fields (`invalidFields(type:detail:)`,
+for example `lengthSeconds` sent as YouTube's string `"213"`). An unrecognised `type` is not an
+error: it becomes `.unknown(type:)`. Optional fields may be absent or `null`. Numbers must be
+finite, and `count` must be an integer.
+
+**Vector format** (`TestVectors/bridge/<type>.json`; add new files, never edit others):
+`{type, description, optional: [field…], enums: {field: [values]}, integers?: [field…], body, minimal?}`.
+`body` has every field; `minimal` omits exactly the `optional` ones. Swift decodes both to the
+values listed in `BridgeTests.swift`. The harness's `assertMatchesVector(message)` checks
+anything a script actually posts: no unknown fields, the required fields present, types as in
+`body`, finite numbers, and `enums`/`integers` respected. Every module's tests should run it over
+`page.messages`.
+
 ### 5.4 Native → JS commands
 
 Native sends commands with
 `callAsyncJavaScript("return window.__ytadless ? __ytadless.cmd(name, args) : {error:'no-bridge'}", arguments: ["name": …, "args": <JSON string>], in: nil, contentWorld: .page)`.
 Arguments always travel as a JSON string, never interpolated into source.
+
+- `JSCommand.functionBody` is that function body, as a constant. `name` and `argumentsJSON`
+  (sorted keys; non-finite numbers become 0) come from the enum. `TestVectors/commands.json`
+  lists every command's name, args and handler file, and Swift checks each case against it.
+- `JSCommandResult.json(from:)` turns the returned value into `send`'s `String?`: `nil`/`NSNull`
+  becomes `nil`, `{error: String}` throws `JSCommandError.rejected(message)`, and anything else
+  becomes sorted-key JSON (or throws `invalidResult`).
+- `WebViewStore` (B) also has `send(_:to: WebRole)`, for `capture` in the browse view.
+- Results are JSON-safe values. Transport commands answer `{ok: true}` (`seek`/`seekBy` add
+  `position`), or `{error: 'Error: no-video'}` when there is no video.
 
 | command | args → result | handler (owner) | sent by |
 |---|---|---|---|
@@ -203,28 +257,34 @@ Arguments always travel as a JSON string, never interpolated into source.
 
 ### 5.5 Swift contracts (Phase 0 writes every signature; owners fill in bodies)
 
+Every public struct has an explicit `public init` with defaults for its optional fields, so the
+app target (and C's debug "Open test video") can build values. The value enums are
+`CaseIterable`. Files marked *frozen* are P0 contracts; Router.swift, ContentRules.swift and
+PresentationGeometry.swift are stubs their owners rewrite.
+
 ```swift
 // ── Core/Sources/YTCore (public, Sendable, Linux-clean) ─────────────────────────────
-public enum WebRole: String, Codable, Sendable { case browse, player }
+public enum WebRole: String, Codable, CaseIterable, Sendable { case browse, player }        // Bridge/BridgeMessage.swift
 
-// Routing — types P0, logic B
+// Routing — types P0 (Routing/RoutingTypes.swift, frozen), logic B (Routing/Router.swift)
 public struct VideoRequest: Hashable, Sendable {
-    public enum Kind: String, Sendable { case video, short, live }
+    public enum Kind: String, Codable, CaseIterable, Sendable { case video, short, live }
     public var id: String; public var kind: Kind
     public var startSeconds: Int?; public var playlistID: String?; public var playlistIndex: Int?
-    public var watchURL: URL                       // canonical https://m.youtube.com/... to load
+    public var watchURL: URL                       // canonical form: §6.2
+    public init(id:kind:startSeconds: = nil, playlistID: = nil, playlistIndex: = nil, watchURL:)
 }
 public enum LinkKind: Equatable, Sendable { case video(VideoRequest), youtubePage(URL), signIn(URL), external(URL), ignore }
-public enum NavigationTrigger: String, Codable, Sendable { case click, history, windowOpen, location, initial }
+public enum NavigationTrigger: String, Codable, CaseIterable, Sendable { case click, history, windowOpen, location, initial }
 public enum RouteDecision: Equatable, Sendable { case allow, openInPlayer(VideoRequest), openInBrowse(URL), openExternally(URL), cancel }
-public enum Router {
-    public static func normalize(_ url: URL) -> URL    // www./music. → m., http → https, youtu.be → watch
+public enum Router {                               // P0 stub: identity / .ignore / .allow
+    public static func normalize(_ url: URL) -> URL    // www./music./bare → m., http → https, youtu.be → watch
     public static func classify(_ url: URL) -> LinkKind
     public static func decide(_ url: URL, role: WebRole, trigger: NavigationTrigger) -> RouteDecision
 }
 
-// Bridge — P0
-public enum LogLevel: String, Codable, Sendable { case debug, info, warn, error }
+// Bridge — P0, frozen (Bridge/)
+public enum LogLevel: String, Codable, CaseIterable, Sendable { case debug, info, warn, error }
 public enum BridgeMessage: Equatable, Sendable {
     case ready(role: WebRole, url: String)
     case log(level: LogLevel, source: String, message: String)
@@ -236,50 +296,91 @@ public enum BridgeMessage: Equatable, Sendable {
     case playback(PlaybackSnapshot)
     case presentation(MediaPresentation)
     case unknown(type: String)
-    /// `body` is WKScriptMessage.body (an NSDictionary bridged to Any).
+    public var type: String { get }                // the wire type
+    public static let protocolVersion = 1
+    /// `body` is WKScriptMessage.body (an NSDictionary bridged to Any). See §5.3 "Decoding".
     public static func decode(_ body: Any) throws -> (message: BridgeMessage, isMainFrame: Bool)
 }
-public enum AppLifecycle: String, Sendable { case active, inactive, background }
-public enum PageLayout: String, Sendable { case page, video }
+public enum BridgeDecodingError: Error, Equatable, Sendable {
+    case notAnObject, unsupportedVersion(Int?), missingType, invalidFrame(String?), invalidFields(type: String, detail: String)
+}
+public enum AppLifecycle: String, Codable, CaseIterable, Sendable { case active, inactive, background }
+public enum PageLayout: String, Codable, CaseIterable, Sendable { case page, video }
 public enum JSCommand: Equatable, Sendable {
     case play, pause, seek(to: Double), seekBy(Double), pip(enter: Bool), state
     case lifecycle(AppLifecycle), audioInterruption(began: Bool, shouldResume: Bool)
     case layout(PageLayout), capture
+    public static let functionBody: String         // §5.4
     public var name: String { get }
     public var argumentsJSON: String { get }
 }
+public enum JSCommandError: Error, Equatable, Sendable { case rejected(String), invalidResult }
+public enum JSCommandResult { public static func json(from result: Any?) throws -> String? }
 
-// Playback — P0 (D may add pure helpers alongside)
-public enum PlaybackStatus: String, Codable, Sendable { case idle, loading, playing, paused, buffering, ended }
-public enum MediaPresentation: String, Codable, Sendable { case inline, pip, fullscreen }
+// Playback — P0 (Playback/PlaybackTypes.swift, PlaybackState.swift; frozen). D may add pure helpers in new files.
+public enum PlaybackStatus: String, Codable, CaseIterable, Sendable { case idle, loading, playing, paused, buffering, ended }
+public enum MediaPresentation: String, Codable, CaseIterable, Sendable { case inline, pip, fullscreen }
 public struct VideoMeta: Codable, Equatable, Sendable { videoId, title, author: String; lengthSeconds: Double?; thumbnailURL: String?; isLive: Bool }
-public struct PlaybackSnapshot: Codable, Equatable, Sendable { status: PlaybackStatus; position: Double; duration: Double?; rate: Double; videoId: String? }
+public struct PlaybackSnapshot: Codable, Equatable, Sendable {
+    status: PlaybackStatus; position: Double; duration: Double?; rate: Double; videoId: String?
+    public static let idle                         // .idle, position 0, rate 1
+}
 public struct PlaybackState: Equatable, Sendable {
     public var meta: VideoMeta?; public var snapshot: PlaybackSnapshot; public var presentation: MediaPresentation
-    public mutating func apply(_ message: BridgeMessage)          // ignores messages it doesn't care about
+    public init(meta: = nil, snapshot: = .idle, presentation: = .inline)
+    /// Applies videoMeta / playback / presentation, ignores the rest. Meta for a new video resets
+    /// the snapshot to .loading (keeping rate); a snapshot for another video drops stale meta.
+    public mutating func apply(_ message: BridgeMessage)
 }
 
-// Presentation — type P0, state machine + geometry C
-public enum PlayerPresentation: Equatable, Sendable {
-    public enum Corner: Sendable { case topLeading, topTrailing, bottomLeading, bottomTrailing }
+// Presentation — type P0 (Presentation/PlayerPresentation.swift, frozen); state machine + geometry C
+public enum PlayerPresentation: Equatable, Hashable, Sendable {
+    public enum Corner: CaseIterable, Hashable, Sendable { case topLeading, topTrailing, bottomLeading, bottomTrailing }
     case hidden, expanded, docked, mini(Corner)
 }
+// C's stub (Presentation/PresentationGeometry.swift, not frozen): PlanarVector, PresentationGesture,
+// PlayerPresentation.next(after:), MiniPlayerGeometry.dockedHeight(forWidth:) / snapCorner(…).
+// Plain Doubles, not CGSize/CGPoint: their conformances differ between Darwin and Linux.
 
-// Scripts — P0
-public struct ScriptManifest: Decodable, Sendable {           // decodes manifest.json
-    public struct Entry: Decodable, Sendable { file: String; roles: [WebRole]; injection: Injection; mainFrameOnly: Bool; owner: String }
-    public enum Injection: String, Decodable, Sendable { case start, end }
+// Scripts — P0, frozen (Scripts/)
+public struct ScriptManifest: Decodable, Equatable, Sendable {           // decodes manifest.json
+    public struct Entry: Decodable, Equatable, Sendable { file: String; roles: [WebRole]; injection: Injection; mainFrameOnly: Bool; owner: String }
+    public enum Injection: String, Codable, Sendable { case start, end }
+    public var version: Int; public var scripts: [Entry]
+    public static func parse(_ json: String) throws -> ScriptManifest
     public func entries(for role: WebRole) -> [Entry]
+    public func problems() -> [String]
+    public func injectionPlan(for role: WebRole, debug: Bool, build: String, load: (String) throws -> String) rethrows -> [InjectedScript]
 }
-public enum ScriptConfig { public static func prelude(role: WebRole, debug: Bool, build: String) -> String }
+public struct InjectedScript: Equatable, Sendable { name, source: String; injection: ScriptManifest.Injection; mainFrameOnly: Bool; static let preludeName = "prelude.js" }
+public enum ScriptConfig {
+    public static let namespace = "__ytadless", messageHandlerName = "ytadless"   // = NS, HANDLER in bridge.js
+    public static func prelude(role: WebRole, debug: Bool, build: String) -> String
+    public static func configJSON(role: WebRole, debug: Bool, build: String) -> String
+    public static func jsonString(_ string: String) -> String                      // ≡ JSON.stringify(string)
+}
 
-// Rules — API P0 (stub returns an empty list), implementation A
+// Rules — types P0 (Rules/RuleTypes.swift, frozen); compiler A (Rules/ContentRules.swift; P0 stub returns "[]")
 public struct RuleDiagnostic: Equatable, Sendable { file: String; line: Int; message: String }
 public struct CompiledRules: Sendable { public let json: String; public let identifier: String; public let diagnostics: [RuleDiagnostic] }
-public enum ContentRules { public static func compile(network: String, cosmetic: String) -> CompiledRules }  // identifier = "ytadless-" + FNV-1a(json)
+public enum ContentRules {
+    public static func compile(network: String, cosmetic: String) -> CompiledRules
+    public static func identifier(for json: String) -> String     // "ytadless-" + 16 hex of FNV1a.hash64(json.utf8)
+}
+public enum FNV1a { public static func hash64<S: Sequence<UInt8>>(_: S) -> UInt64; public static func hex64(_: String) -> String }
 
-// ── Core/Sources/YTAssets ───────────────────────────────────────────────────────────
-public enum YTAssets { public static func text(_ relativePath: String) throws -> String }  // "manifest.json", "scripts/x.js", "rules/y.txt"
+// ── Core/Sources/YTAssets (P0, frozen) ──────────────────────────────────────────────
+public enum YTAssets {
+    public static func text(_ relativePath: String) throws -> String  // "manifest.json", "scripts/x.js", "rules/y.txt"
+    public static func url(_ relativePath: String) throws -> URL      // rejects "", "/…", "..", "."
+}
+public enum YTAssetsError: Error, Equatable, Sendable { case bundleMissing, invalidPath(String), notFound(String), notUTF8(String) }
+
+// ── Sources/YTadless/App (P0, frozen) ───────────────────────────────────────────────
+@MainActor final class AppServices {       // composition root; `static let shared`, built once, so webviews are created once
+    let session: PlayerSession; let hub: BridgeEventHub; let store: WebViewStore; let media: MediaCoordinator
+}   // subscribes the hub: player-role, main-frame messages → session.playback.apply; then media.start()
+struct RootView: View { let services: AppServices }   // PlayerLayoutView(store:session:) + .overlay { DebugEntryView(…) }
 
 // ── Sources/YTadless/Shared (P0, frozen) ────────────────────────────────────────────
 @MainActor @Observable final class PlayerSession {
@@ -292,10 +393,10 @@ public enum YTAssets { public static func text(_ relativePath: String) throws ->
 @MainActor protocol PlayerControlling: AnyObject {
     func open(_ request: VideoRequest)               // load in player webview; .hidden → .expanded
     func close()                                     // pause, blank the player, → .hidden
-    @discardableResult func send(_ command: JSCommand) async throws -> String?   // JSON result
+    @discardableResult func send(_ command: JSCommand) async throws -> String?   // JSON result; throws JSCommandError
 }
 @MainActor final class BridgeEventHub {
-    struct Event { let role: WebRole; let isMainFrame: Bool; let message: BridgeMessage }
+    struct Event: Sendable { let role: WebRole; let isMainFrame: Bool; let message: BridgeMessage }
     func subscribe(_ handler: @escaping @MainActor (Event) -> Void) -> AnyObject   // keep the token; drop it to unsubscribe
     func publish(_ event: Event)
 }
@@ -308,7 +409,12 @@ struct WebViewContainer: UIViewRepresentable { let webView: WKWebView }   // hos
 }
 @MainActor final class MediaCoordinator { init(session: PlayerSession, player: any PlayerControlling, hub: BridgeEventHub); func start() }  // D
 struct PlayerLayoutView: View { init(store: WebViewStore, session: PlayerSession) }                                                      // C
+struct DebugEntryView: View { init(store: WebViewStore, hub: BridgeEventHub, session: PlayerSession) }                                  // B
 ```
+
+`DebugEntryView` (Debug/, B) is where B's Debug log and Capture UI attach. RootView overlays it
+full-screen above the player, so it must let touches through wherever it draws nothing. It was
+added in Phase 0 because RootView is frozen and had no slot for B's UI.
 
 ### 5.6 Rule file formats (A)
 
@@ -329,6 +435,83 @@ struct PlayerLayoutView: View { init(store: WebViewStore, session: PlayerSession
 Anything else is a **diagnostic, and the test suite fails on any diagnostic**: `##+js(…)`,
 `#?#`, `:has-text()`, `#@#`, `$replace`, `$redirect`, `$removeparam`. Logic like that belongs in
 the JS layer.
+
+### 5.7 Node harness (`js/test/harness.mjs`, P0, frozen)
+
+`createPage(options)` is async and resolves to a `page`. It mirrors the device in this order:
+
+1. A document with only `<html>` (no `<head>`/`<body>`) and `readyState` `'loading'`. This is
+   document start: a script that touches `document.body` at load fails here as it would on device.
+2. Fakes are installed: `webkit.messageHandlers.ytadless` (records a `structuredClone` of each
+   body, so it throws DataCloneError like WebKit), `fetch`, `Response`/`Request`/`Headers`, and
+   `XMLHttpRequest`.
+3. `beforeScripts(window, page)` runs: the place to install module mocks (media elements,
+   `navigator.mediaSession`, timers) without editing the harness.
+4. The role's `start` scripts run, prelude first; `frame: 'sub'` drops `mainFrameOnly` scripts.
+5. The HTML is placed, then its inline classic `<script>`s run in document order.
+6. `readyState` becomes `'interactive'`, `DOMContentLoaded` fires, then the `end` scripts run.
+7. `readyState` becomes `'complete'` and `load` fires.
+
+`until: 'start'` stops after step 4; call `page.finishLoading({html})` to continue.
+
+| option | default | |
+|---|---|---|
+| `role` | `'browse'` | `'browse'` \| `'player'` |
+| `url` | `https://m.youtube.com/` | page URL. For `frame: 'sub'` it is the parent's URL; the frame is `about:blank` |
+| `html` | empty head/body | page markup placed in step 5 |
+| `runInlineScripts` | `true` | |
+| `frame` | `'main'` | `'sub'` loads the page in an iframe, so `frame` posts as `'sub'` |
+| `scripts` | `'all'` | `'none'`, or an array of manifest files to keep (bridge.js and the prelude are always kept) |
+| `debug`, `build` | `false`, `'test'` | prelude config |
+| `routes` | `[]` | fetch/XHR routes, below |
+| `webkit` | `true` | `false` = no message handler |
+| `beforeScripts` | — | `(window, page) => void` |
+| `until` | `'complete'` | `'start'` |
+
+**`page` members:** `window`, `document`, `messages` (posted bodies, as Node-realm copies),
+`posted(type?)`, `scriptErrors()`, `loaded` (script names in injection order), `requests`,
+`unmatched`, `pageErrors` (anything that threw into the page), `console`, `jsdomErrors`,
+`route(...routes)`/`fakeFetch(routes)`, `runInline(src, filename?)` (an inline `<script>`; throws
+what it throws), `setHTML(markup)`, `finishLoading()`, `cmd(name, args)` (like native `send`:
+JSON args, awaits, returns a Node-realm copy), `flush(ms?)`, and `close()` (call it in `t.after`).
+
+**Routes:** `{match: substring | RegExp | (url, {method}) => bool, method?, status = 200,
+statusText?, headers?, body: string | object, delayMs = 0, times = Infinity}`. The first match
+answers. Bodies always reach the page as **text** (an object becomes JSON text), so the page
+parses them in its own realm. `Response.json()` and XHR `responseType: 'json'` use the page's
+pristine `JSON.parse`, as on device, and not a wrapped one. `res.url` is kept, also across
+`clone()`. An unmatched fetch rejects with a page-realm `TypeError`; an unmatched XHR fires
+`error` with status 0. Both are recorded in `page.unmatched`. XHR state (`responseText`,
+`response`, `readyState`, `on*`) lives in prototype accessors, as in a browser, so hooks can wrap it.
+
+**Other exports:** `injectionPlan()`, `prelude()`, `configJSON()` (mirroring YTCore),
+`loadManifestScripts(page)` (with `scripts: 'none'`), `assertMatchesVector(message)`,
+`assertClean(page)` (no scriptError, nothing thrown into the page), `readManifest()`,
+`readText()`, `readJSON()`, `fixture(...path)`, the vector readers, `PATHS`, `NAMESPACE`,
+`HANDLER`, and `IPHONE_SAFARI_UA` (the page's `navigator.userAgent`).
+
+Not emulated: media playback (jsdom has none; mock it in `beforeScripts`, as
+`player-bridge.test.mjs` does), layout, and streaming parse (the DOM is placed whole, then inline
+scripts run).
+
+### 5.8 Test vectors (`TestVectors/`, shared, add-only)
+
+| file | read by | content |
+|---|---|---|
+| `bridge/<type>.json` | BridgeTests, `assertMatchesVector` | one per message type plus `unknown.json` (§5.3) |
+| `commands.json` | BridgeTests, vectors/player-bridge tests | `{commands: [{swift, name, args, handler}]}` in JSCommand case order (§5.4) |
+| `prelude.json` | ScriptsTests, vectors test | `{cases: [{role, debug, build, source}]}`, the exact prelude bytes (§5.1) |
+| `routing.json` | RoutingVectorSchemaTests (shape), RoutingTests (B), router.js tests (B) | `{version: 1, normalize: [{url, expect}], decide: [{name, role, trigger, url, expect}]}` |
+
+In `routing.json`, `expect` is one of:
+- `{decision: 'allow' | 'cancel'}`
+- `{decision: 'openInPlayer', request: {id, kind, startSeconds, playlistID, playlistIndex, watchURL}}`,
+  where absent values are `null`
+- `{decision: 'openInBrowse' | 'openExternally', url}`
+
+Every case is derived from the §6.2 decision table, and `watchURL` uses the canonical form defined
+there. The JS router only needs to know whether `decision !== 'allow'`, but the whole object is
+there for both.
 
 ## 6. Feature designs
 
@@ -428,6 +611,25 @@ Decision table (`Router.decide`):
 | player | YouTube non-video page | `openInBrowse` + `session.collapseForBrowsing()` |
 | any | `youtube.com/redirect?q=…` | `openExternally(q)` |
 | any | other site | `openExternally` |
+| any | `about:` URL (WebViewStore blanks the player with `about:blank`) | `allow` |
+
+**Classification and canonical `watchURL`** (pinned by `TestVectors/routing.json`):
+
+- YouTube hosts are `youtube.com`, `www.`, `m.`, `music.` and `youtu.be`, over http or https.
+  `normalize` maps all of them to `https://m.youtube.com` and keeps the path and query, except
+  that `youtu.be/ID?q` becomes `/watch?v=ID&q`.
+- A video ID is 11 characters of `[A-Za-z0-9_-]`. Kinds: `/watch?v=ID` (wherever `v` falls in
+  the query) and `youtu.be/ID` are `video`; `/shorts/ID` is `short`; `/live/ID` is `live`.
+- `startSeconds` comes from `t` (`90`, `90s`, `1m30s`, `1h2m3s`), `playlistID` from `list`, and
+  `playlistIndex` from `index`.
+- `watchURL` for `video` and `live` is `https://m.youtube.com/watch?v=ID`, then `&t=<n>s`,
+  `&list=<id>` and `&index=<n>` in that order, each only when present. For `short` it is
+  `https://m.youtube.com/shorts/ID`. Every other parameter (`si`, `feature`, `pp`, `app`, …) is
+  dropped.
+- `openInBrowse` carries the normalized URL. `openExternally` for `/redirect` carries the decoded
+  `q`; for any other site it carries the URL unchanged.
+- Google sign-in and consent hosts are `accounts.google.com`, `accounts.youtube.com` and
+  `consent.youtube.com`. Other Google hosts are external.
 
 Opening a video does a full `load` of `VideoRequest.watchURL` in the player view (D15).
 `m.youtube.com` and `www.` links are normalized.
@@ -545,28 +747,33 @@ code stays thin.
 
 ### Phase 0: Foundation (one session, sequential). **Must merge before A–D start.**
 
-1. `git init`; commit the scaffold.
+1. `git init`; commit the scaffold. *(done: `98f82f2`)*
 2. Create `Core/` (YTCore, YTAssets, YTCoreTests). The app package depends on it. Both build and test.
 3. Write every §5 contract: Swift types with real implementations for Bridge, Scripts,
    PlaybackState and ScriptConfig; signature-only stubs returning safe defaults for Router
    (`.allow`), ContentRules (empty list), and Presentation geometry.
-4. `manifest.json` with all 11 entries; `bridge.js` complete; every other script a stub IIFE
+4. `manifest.json` with the 10 file entries (the prelude, #0 in §5.1, is generated and always first); `bridge.js` complete; every other script a stub IIFE
    wrapped in `guard` with an owner header; a minimal `player-bridge.js` (find the video; emit
    `playback`/`videoMeta`; handle play/pause/seek/state); empty rule files with format headers.
 5. App: `AppServices` builds `PlayerSession`, `BridgeEventHub`, `WebViewStore` (two webviews,
    shared `WKWebsiteDataStore.default()`, the final config flags from D14, scripts injected from
    the manifest, handler → hub, `send` through `callAsyncJavaScript`, `open`/`close`),
-   `MediaCoordinator` stub, and `PlayerLayoutView` stub (browse full screen; player as a plain
-   overlay when `request != nil`). Add the file-sharing keys to Info.plist.
+   `MediaCoordinator` stub, `DebugEntryView` stub (B's UI slot), and `PlayerLayoutView` stub
+   (browse full screen; the player container is always in the tree and is shown as an overlay
+   only when `request != nil`, D2). Add the file-sharing keys to Info.plist.
 6. `js/`: `package.json` (`"type":"module"`, `"test": "node --test"`, jsdom), `harness.mjs`
-   (`createPage({role, url, html?})`, `loadManifestScripts`, `runInline(src)`, fake
+   (§5.7: `createPage({role, url, html?, …})`, `loadManifestScripts`, `runInline(src)`, fake
    `webkit.messageHandlers`, `fakeFetch(routes)`, `FakeXHR`), and `smoke.test.mjs`: every
    script loads in both roles with no `scriptError`, `ready` is posted, and the
    `var ytInitialPlayerResponse = …` trap fires in the harness.
-7. `TestVectors/routing.json` (≥25 cases) and `TestVectors/bridge/*.json` (one per message type).
+7. `TestVectors/routing.json` (≥25 cases), `TestVectors/bridge/*.json` (one per message type),
+   `TestVectors/commands.json` and `TestVectors/prelude.json` (§5.8).
 8. Done when `swift test`, `npm test` and `xtool dev build` are green, and m.youtube.com still
    loads and plays inline on the device. Message flow is covered off-device by the smoke test and
    the decode tests; on device it first becomes visible when B's Debug log lands. Then tag `phase0`.
+   Expect browse to need a tap on YouTube's play button: D14 sets `.all` for browse, and Router is
+   still the `.allow` stub, so videos open in browse rather than the player. That is expected, not
+   a regression.
 
 ### Phase 1: four parallel modules (separate worktrees from `phase0`)
 

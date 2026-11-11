@@ -1,0 +1,8 @@
+{
+  "type": "filterHit",
+  "description": "An ad rule removed something. count is a non-negative integer.",
+  "optional": [],
+  "enums": {},
+  "integers": ["count"],
+  "body": { "v": 1, "type": "filterHit", "frame": "main", "rule": "playerResponse.adPlacements", "count": 3 }
+}

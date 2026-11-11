@@ -1,0 +1,8 @@
+{
+  "type": "scriptError",
+  "description": "Posted by __ytadless.guard (and cmd / emit) when a script throws. stack is omitted when the error has none.",
+  "optional": ["stack"],
+  "enums": {},
+  "body": { "v": 1, "type": "scriptError", "frame": "main", "source": "hooks.js", "message": "TypeError: x is not a function", "stack": "addPruner@ytadless/hooks.js:12:3" },
+  "minimal": { "v": 1, "type": "scriptError", "frame": "main", "source": "hooks.js", "message": "boom" }
+}

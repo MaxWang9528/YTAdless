@@ -1,0 +1,14 @@
+! rules/network.txt — network blocking rules. Owner: Module A (PLAN.md §5.6, §6.1).
+!
+! An Adblock Plus subset, compiled by YTCore's ContentRules into a WKContentRuleList (D9).
+! `!` starts a comment. Supported:
+!   ||example.com^                     block the domain and its subdomains
+!   ||youtube.com/pagead/              block a URL prefix
+!   $script,image,stylesheet,xhr,media,font,ping,subdocument   resource types
+!   $third-party / $~third-party       load type
+!   $domain=a.com|b.com / $domain=~a.com   if-domain / unless-domain (one condition per rule)
+!   @@…                                exception (ignore-previous-rules; emitted after all blocks)
+!   /regex/                            raw url-filter, checked against WebKit's regex subset
+! Anything else is a diagnostic, and any diagnostic fails `swift test`.
+!
+! Never block googlevideo.com media, /api/stats/{playback,watchtime,qoe} or /youtubei/v1/log_event.

@@ -1,0 +1,7 @@
+{
+  "type": "route",
+  "description": "router.js asks native to route a link it intercepted (click capture, history backstop, window.open).",
+  "optional": [],
+  "enums": { "trigger": ["click", "history", "windowOpen", "location", "initial"] },
+  "body": { "v": 1, "type": "route", "frame": "main", "url": "https://m.youtube.com/watch?v=dQw4w9WgXcQ&t=42s", "trigger": "click" }
+}

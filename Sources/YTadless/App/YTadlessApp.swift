@@ -1,10 +1,12 @@
+// App entry point. Owner: P0 (frozen).
+
 import SwiftUI
 
 @main
 struct YTadlessApp: App {
     var body: some Scene {
         WindowGroup {
-            YouTubeWebView(url: URL(string: "https://m.youtube.com/")!)
+            RootView(services: AppServices.shared)
         }
     }
 }

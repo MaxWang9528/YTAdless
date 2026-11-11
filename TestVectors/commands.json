@@ -1,0 +1,15 @@
+{
+  "description": "Native → JS commands (PLAN.md §5.4). `args` is what JSCommand.argumentsJSON parses to; `swift` is the case that produces it. Handlers receive `args` as an object.",
+  "commands": [
+    { "swift": ".play",                                         "name": "play",              "args": {},                                         "handler": "player-bridge.js" },
+    { "swift": ".pause",                                        "name": "pause",             "args": {},                                         "handler": "player-bridge.js" },
+    { "swift": ".seek(to: 42.5)",                               "name": "seek",              "args": { "to": 42.5 },                             "handler": "player-bridge.js" },
+    { "swift": ".seekBy(-10)",                                  "name": "seekBy",            "args": { "delta": -10 },                           "handler": "player-bridge.js" },
+    { "swift": ".pip(enter: true)",                             "name": "pip",               "args": { "enter": true },                          "handler": "player-bridge.js" },
+    { "swift": ".state",                                        "name": "state",             "args": {},                                         "handler": "player-bridge.js" },
+    { "swift": ".lifecycle(.background)",                       "name": "lifecycle",         "args": { "state": "background" },                  "handler": "background.js" },
+    { "swift": ".audioInterruption(began: false, shouldResume: true)", "name": "audioInterruption", "args": { "phase": "ended", "shouldResume": true }, "handler": "background.js" },
+    { "swift": ".layout(.video)",                               "name": "layout",            "args": { "mode": "video" },                        "handler": "layout.js" },
+    { "swift": ".capture",                                      "name": "capture",           "args": {},                                         "handler": "debug.js" }
+  ]
+}

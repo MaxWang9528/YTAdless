@@ -1,0 +1,7 @@
+{
+  "type": "futureThing",
+  "description": "A type this build doesn't know decodes to .unknown(type:) and is ignored, not rejected.",
+  "optional": [],
+  "enums": {},
+  "body": { "v": 1, "type": "futureThing", "frame": "main", "anything": [1, 2, 3] }
+}

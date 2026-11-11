@@ -8,15 +8,18 @@ let package = Package(
         .iOS("26.0"),
     ],
     products: [
-        // An xtool project contains exactly one library product: the app.
-        .library(
-            name: "YTadless",
-            targets: ["YTadless"]
-        ),
+        .library(name: "YTadless", targets: ["YTadless"]),
+    ],
+    dependencies: [
+        .package(path: "Core"),
     ],
     targets: [
         .target(
-            name: "YTadless"
+            name: "YTadless",
+            dependencies: [
+                .product(name: "YTCore", package: "Core"),
+                .product(name: "YTAssets", package: "Core"),
+            ]
         ),
     ]
 )

@@ -1,0 +1,7 @@
+{
+  "type": "presentation",
+  "description": "player-bridge.js, when the main video enters or leaves PiP or fullscreen.",
+  "optional": [],
+  "enums": { "mode": ["inline", "pip", "fullscreen"] },
+  "body": { "v": 1, "type": "presentation", "frame": "main", "mode": "pip" }
+}

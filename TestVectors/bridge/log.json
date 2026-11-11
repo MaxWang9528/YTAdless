@@ -1,0 +1,7 @@
+{
+  "type": "log",
+  "description": "__ytadless.log(level, source, ...args); debug.js forwards console.warn/error. This sample comes from a subframe.",
+  "optional": [],
+  "enums": { "level": ["debug", "info", "warn", "error"] },
+  "body": { "v": 1, "type": "log", "frame": "sub", "level": "warn", "source": "debug.js", "message": "console.warn: something odd" }
+}

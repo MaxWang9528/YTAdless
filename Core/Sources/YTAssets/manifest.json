@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "scripts": [
+    { "file": "bridge.js",        "roles": ["browse", "player"], "injection": "start", "mainFrameOnly": false, "owner": "P0" },
+    { "file": "debug.js",         "roles": ["browse", "player"], "injection": "start", "mainFrameOnly": false, "owner": "B" },
+    { "file": "hooks.js",         "roles": ["browse", "player"], "injection": "start", "mainFrameOnly": false, "owner": "A" },
+    { "file": "player-ads.js",    "roles": ["browse", "player"], "injection": "start", "mainFrameOnly": false, "owner": "A" },
+    { "file": "feed-ads.js",      "roles": ["browse", "player"], "injection": "start", "mainFrameOnly": false, "owner": "A" },
+    { "file": "router.js",        "roles": ["browse", "player"], "injection": "start", "mainFrameOnly": true,  "owner": "B" },
+    { "file": "player-bridge.js", "roles": ["player"],           "injection": "start", "mainFrameOnly": true,  "owner": "D" },
+    { "file": "background.js",    "roles": ["player"],           "injection": "start", "mainFrameOnly": true,  "owner": "D" },
+    { "file": "media-session.js", "roles": ["player"],           "injection": "start", "mainFrameOnly": true,  "owner": "D" },
+    { "file": "layout.js",        "roles": ["player"],           "injection": "end",   "mainFrameOnly": true,  "owner": "C" }
+  ]
+}

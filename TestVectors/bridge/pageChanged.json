@@ -1,0 +1,8 @@
+{
+  "type": "pageChanged",
+  "description": "router.js reports every SPA URL change.",
+  "optional": ["title"],
+  "enums": {},
+  "body": { "v": 1, "type": "pageChanged", "frame": "main", "url": "https://m.youtube.com/feed/subscriptions", "title": "Subscriptions - YouTube" },
+  "minimal": { "v": 1, "type": "pageChanged", "frame": "main", "url": "https://m.youtube.com/" }
+}

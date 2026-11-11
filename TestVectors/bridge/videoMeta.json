@@ -1,0 +1,8 @@
+{
+  "type": "videoMeta",
+  "description": "player-bridge.js, from playerResponse.videoDetails (lengthSeconds is converted from YouTube's string to a number) or the DOM fallback.",
+  "optional": ["lengthSeconds", "thumbnailURL"],
+  "enums": {},
+  "body": { "v": 1, "type": "videoMeta", "frame": "main", "videoId": "dQw4w9WgXcQ", "title": "Rick Astley - Never Gonna Give You Up (Official Video)", "author": "Rick Astley", "lengthSeconds": 213, "thumbnailURL": "https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg", "isLive": false },
+  "minimal": { "v": 1, "type": "videoMeta", "frame": "main", "videoId": "dQw4w9WgXcQ", "title": "Never Gonna Give You Up", "author": "", "isLive": true }
+}
