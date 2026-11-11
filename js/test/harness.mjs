@@ -212,6 +212,17 @@ function installNetworkFakes(win, page) {
     }
   }
 
+  // Node's Request rejects relative URLs; a page's resolves them against its location.
+  const NodeRequest = globalThis.Request;
+  class Request extends NodeRequest {
+    constructor(input, init) {
+      const resolved = typeof input === 'string' || input instanceof URL || input instanceof win.URL
+        ? new URL(String(input), win.location.href).href
+        : input;
+      super(resolved, init);
+    }
+  }
+
   function findRoute(url, method) {
     const route = page.routes.find((r) => routeMatches(r, url, method));
     if (route) route.remaining -= 1;
@@ -226,7 +237,8 @@ function installNetworkFakes(win, page) {
     const rawURL = typeof input === 'string' ? input : input && typeof input.url === 'string' ? input.url : String(input);
     const url = new URL(rawURL, win.location.href).href;
     const method = String(init.method || (input && input.method) || 'GET').toUpperCase();
-    const body = init.body ?? null;
+    let body = init.body ?? null;
+    if (body === null && input instanceof NodeRequest && input.body) body = await input.clone().text();
     page.requests.push({ api: 'fetch', method, url, body: body == null ? null : String(body) });
     const route = findRoute(url, method);
     if (route && route.delayMs) await delay(route.delayMs);
@@ -241,7 +253,7 @@ function installNetworkFakes(win, page) {
 
   win.fetch = fetch;
   win.Response = Response;
-  win.Request = globalThis.Request;
+  win.Request = Request;
   win.Headers = globalThis.Headers;
   win.XMLHttpRequest = makeFakeXHR(win, page, findRoute, pageJSONParse);
 }

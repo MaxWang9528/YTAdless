@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "description": "Routing cases shared by Swift (Router, Module B) and router.js. Derived from the PLAN.md §6.2 decision table; the canonical watchURL form is defined there. Add cases; never edit or delete existing ones.",
+  "description": "Routing cases shared by Swift (Router, Module B) and router.js. Derived from the PLAN.md §6.2 decision table; the canonical watchURL form is defined there. Module B may append cases; never edit or delete existing ones (PLAN.md §5.8).",
   "normalize": [
     {
       "url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",

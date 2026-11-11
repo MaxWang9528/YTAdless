@@ -66,6 +66,9 @@ The tree and per-path owners are in PLAN.md §4. The short version:
   The file on disk is exactly what runs.
 - Each script is one IIFE whose body runs inside `__ytadless.guard('<file>', () => { … })`. A
   script must never throw into the page and never break YouTube when a selector or key is missing.
+  Wrap callbacks too (listeners, observers, timers): `(e) => ns.guard(SOURCE, () => …)`.
+- Line 1 of every script is `// <file> — owner: Module <X> (PLAN.md §…).`, and the smoke test
+  checks it. The runtime API is in PLAN.md §5.2, and the Node harness in §5.7.
 - Anything YouTube can change (keys, paths, URL patterns, selectors, timings) goes in a
   `const CONFIG`/`RULES` table at the top of the file. Each entry cites where it came from (uBO
   line, fixture, date).

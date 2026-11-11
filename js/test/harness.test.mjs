@@ -99,6 +99,21 @@ test('harness › fetch › unmatched requests reject with a page-realm TypeErro
   assert.deepEqual(page.unmatched.map((u) => u.url), ['https://m.youtube.com/once']);
 });
 
+test('harness › fetch › Request resolves relative URLs against the page, and fetch(Request) records its body', async (t) => {
+  const page = await createPage({ scripts: 'none', url: 'https://m.youtube.com/watch?v=dQw4w9WgXcQ', routes: [{ match: '/youtubei/v1/player', body: '{}' }] });
+  t.after(() => page.close());
+  const out = await page.runInline(`(async () => {
+    const req = new Request('/youtubei/v1/player?key=k', { method: 'POST', body: '{"videoId":"dQw4w9WgXcQ"}' });
+    const res = await fetch(req);
+    return { reqURL: req.url, resURL: res.url };
+  })()`);
+  assert.deepEqual({ ...out }, {
+    reqURL: 'https://m.youtube.com/youtubei/v1/player?key=k',
+    resURL: 'https://m.youtube.com/youtubei/v1/player?key=k',
+  });
+  assert.deepEqual(page.requests, [{ api: 'fetch', method: 'POST', url: 'https://m.youtube.com/youtubei/v1/player?key=k', body: '{"videoId":"dQw4w9WgXcQ"}' }]);
+});
+
 test('harness › XMLHttpRequest › readyState sequence, handlers and listeners, text and json responses', async (t) => {
   const page = await createPage({ scripts: 'none', routes: [{ match: '/youtubei/v1/next', body: { contents: [1, 2] }, headers: { 'X-Test': 'yes' } }] });
   t.after(() => page.close());

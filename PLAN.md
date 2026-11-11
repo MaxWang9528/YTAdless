@@ -118,7 +118,10 @@ YTadless/
    with its script. P0's Swift test files fall under the add-only rule for `Core/Tests/YTCoreTests/`.
 2. "P0 → X" means Phase 0 writes a first version and X owns the file from then on.
 3. Shared directories (`TestVectors/`, `js/fixtures/`, `Core/Tests/YTCoreTests/`) are
-   **add-only**. Add new files; never modify or delete a file another module created.
+   **add-only**. Add new files; never modify or delete a file another module created. There are
+   two exceptions in `TestVectors/` (§5.8). Module B may *append* cases to `routing.json`, since
+   it is the only Phase 1 module that routes, but never edits or deletes existing cases. The
+   `bridge/` set is fixed.
 4. If a module needs a frozen contract to change, it stops and asks the user rather than editing.
    Phase 0 defines the full contract up front (§5) so this should be rare.
 
@@ -219,7 +222,9 @@ for example `lengthSeconds` sent as YouTube's string `"213"`). An unrecognised `
 error: it becomes `.unknown(type:)`. Optional fields may be absent or `null`. Numbers must be
 finite, and `count` must be an integer.
 
-**Vector format** (`TestVectors/bridge/<type>.json`; add new files, never edit others):
+**Vector format** (`TestVectors/bridge/<type>.json`). The set is fixed: one file per message type
+plus `unknown.json`, and BridgeTests checks that the set matches. A new message type is a contract
+change, so ask the user first. Format:
 `{type, description, optional: [field…], enums: {field: [values]}, integers?: [field…], body, minimal?}`.
 `body` has every field; `minimal` omits exactly the `optional` ones. Swift decodes both to the
 values listed in `BridgeTests.swift`. The harness's `assertMatchesVector(message)` checks
@@ -496,6 +501,10 @@ scripts run).
 
 ### 5.8 Test vectors (`TestVectors/`, shared, add-only)
 
+`routing.json` accepts appended cases from Module B; existing cases are never edited or deleted.
+`bridge/` is a fixed set (§5.3). `commands.json` and `prelude.json` change only with a contract
+change.
+
 | file | read by | content |
 |---|---|---|
 | `bridge/<type>.json` | BridgeTests, `assertMatchesVector` | one per message type plus `unknown.json` (§5.3) |
@@ -629,7 +638,8 @@ Decision table (`Router.decide`):
 - `openInBrowse` carries the normalized URL. `openExternally` for `/redirect` carries the decoded
   `q`; for any other site it carries the URL unchanged.
 - Google sign-in and consent hosts are `accounts.google.com`, `accounts.youtube.com` and
-  `consent.youtube.com`. Other Google hosts are external.
+  `consent.youtube.com`. Other Google hosts are external. *Provisional:* sign-in may hop through
+  more Google hosts. Spike S-B1 settles the list, and B appends vectors for what it finds.
 
 Opening a video does a full `load` of `VideoRequest.watchURL` in the player view (D15).
 `m.youtube.com` and `www.` links are normalized.

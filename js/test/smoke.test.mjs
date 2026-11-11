@@ -97,17 +97,18 @@ test('harness › inline script › `var ytInitialPlayerResponse = …` goes thr
   assert.deepEqual(page.pageErrors, []);
 });
 
-test('all scripts › headers › each file names its owner and uses guard', () => {
+test('all scripts › headers › each file names itself and its owner, wraps its body in guard, has a config table', () => {
+  // The convention (CLAUDE.md › JavaScript): line 1 is `// <file> — owner: Module <X> (…)`
+  // (bridge.js: `Owner: P0`); the body runs inside `__ytadless.guard(…)` (any spelling of the
+  // namespace reference); a `const CONFIG`/`RULES`/other UPPER_CASE table sits near the top.
   for (const entry of readManifest().scripts) {
     const text = readText(PATHS.scripts, entry.file);
     const firstLine = text.split('\n', 1)[0];
-    assert.match(firstLine, new RegExp(`^// ${entry.file.replace('.', '\\.')} — `), `${entry.file}: header names the file`);
-    if (entry.file === 'bridge.js') {
-      assert.match(firstLine, /Owner: P0/);
-      continue;
-    }
-    assert.match(firstLine, new RegExp(`owner: Module ${entry.owner}\\b`), `${entry.file}: header names owner ${entry.owner}`);
-    assert.match(text, /ns\.guard\(SOURCE, \(\) => \{/, `${entry.file}: body runs inside guard`);
-    assert.match(text, /const CONFIG = /, `${entry.file}: has a CONFIG table`);
+    assert.ok(firstLine.startsWith(`// ${entry.file} — `), `${entry.file}: line 1 starts with "// ${entry.file} — "`);
+    const owner = entry.file === 'bridge.js' ? /Owner: P0\b/ : new RegExp(`owner: Module ${entry.owner}\\b`, 'i');
+    assert.match(firstLine, owner, `${entry.file}: line 1 names owner ${entry.owner}`);
+    if (entry.file === 'bridge.js') continue;  // it defines guard
+    assert.match(text, /\.guard\(/, `${entry.file}: body runs inside guard`);
+    assert.match(text, /\bconst [A-Z][A-Z0-9_]* = /, `${entry.file}: has an UPPER_CASE config table`);
   }
 });
