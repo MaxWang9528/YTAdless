@@ -69,12 +69,20 @@ struct PlayerLayoutView: View {
                 .opacity(layout.chrome == .header || layout.chrome == .dockedBar ? 1 : 0)
                 .allowsHitTesting(false)
 
+            // The mini-player's shadow, drawn by a sibling so the webview itself carries no shadow.
+            RoundedRectangle(cornerRadius: layout.playerCornerRadius, style: .continuous)
+                .fill(Color.black)
+                .frame(width: layout.player.width, height: layout.player.height)
+                .scaleEffect(layout.playerScale, anchor: .topLeading)
+                .shadow(color: .black.opacity(layout.chrome == .mini ? 0.35 : 0), radius: 8, y: 3)
+                .offset(x: layout.player.minX + live.width, y: layout.player.minY + live.height)
+                .allowsHitTesting(false)
+
             WebViewContainer(webView: store.playerWebView)
                 .frame(width: layout.player.width, height: layout.player.height)
                 .background(Color.black)
                 .clipShape(RoundedRectangle(cornerRadius: layout.playerCornerRadius, style: .continuous))
                 .scaleEffect(layout.playerScale, anchor: .topLeading)
-                .shadow(color: .black.opacity(layout.chrome == .mini ? 0.35 : 0), radius: 8, y: 3)
                 .offset(x: layout.player.minX + live.width, y: layout.player.minY + live.height)
                 // Mini: the overlay takes every touch (tap, drag), so the page never sees them.
                 .allowsHitTesting(layout.isPlayerVisible && layout.chrome != .mini)

@@ -2,7 +2,8 @@
 //
 // Expanded: a slim header above YouTube's watch page (collapse, grabber, close); YouTube's own
 // controls do the rest. Docked: a bar under the video (title, play/pause, PiP, expand, close).
-// Mini: an overlay on the floating video (play/pause, PiP, close; tap expands, drag moves).
+// Mini: an overlay on the floating video (play/pause, PiP, expand, close; tap also expands,
+// drag moves, fling away closes).
 // None of these hold a webview, so they can be created and dropped freely.
 
 import SwiftUI
@@ -100,6 +101,10 @@ struct MiniOverlay: View {
         .overlay(alignment: .topLeading) {
             MiniCornerButton(systemName: actions.isInPiP ? "pip.exit" : "pip.enter",
                              label: "Picture in Picture", action: actions.onPiP)
+        }
+        .overlay(alignment: .bottomTrailing) {
+            MiniCornerButton(systemName: "arrow.up.left.and.arrow.down.right",
+                             label: "Expand player") { actions.onGesture(.expandButton) }
         }
         .accessibilityElement(children: .contain)
         .accessibilityHint("Tap to expand; drag to move; fling away to close")
