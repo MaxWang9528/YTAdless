@@ -3,3 +3,20 @@
 ! `domain##selector` or `##selector`, compiled to css-display-none (D9). `!` starts a comment.
 ! Unsupported (a diagnostic, which fails `swift test`): ##+js(…), #?#, :has-text(), #@#.
 ! WebKit silently drops a rule whose selector is invalid, so the compiler validates selectors.
+! These are the backstop: feed-ads.js removes the same items from the data before they render.
+
+! ── EasyList easylist_specific_hide.txt, m.youtube.com section (F7), 2026-11-24. ──
+m.youtube.com##ytm-companion-slot[data-content-type] > ytm-companion-ad-renderer
+m.youtube.com##ytm-rich-item-renderer > ad-slot-renderer
+m.youtube.com##lazy-list > ad-slot-renderer
+
+! ── PLAN.md §6.1 candidates. Not yet confirmed against a real page: m.youtube.com renders in the
+! client, so anonymous captures contain no DOM. js/fixtures/dom/ holds a synthetic page until a
+! Debug › Capture from the device replaces it. ──
+m.youtube.com##ytm-promoted-sparkles-web-renderer
+m.youtube.com##ytm-promoted-video-renderer
+! Hides the whole grid cell, not only its ad child. Spike S-B2 decides whether :has() works in
+! css-display-none; if it doesn't, ContentRules.hasSelectorStrategy moves it to a stylesheet.
+m.youtube.com##ytm-rich-item-renderer:has(> ad-slot-renderer)
+m.youtube.com##ytm-mealbar-promo-renderer
+m.youtube.com##ytm-statement-banner-renderer
