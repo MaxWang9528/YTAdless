@@ -133,18 +133,44 @@ function endpointOf(url) {
 function casesFromCapture(file) {
   let data;
   try { data = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (_) { return []; }
+  return casesFromCaptureData(data, path.relative(path.join(PATHS.fixtures, 'local'), file));
+}
+
+/** Cases from a parsed Debug › Capture file (`<role>-originals.json`, or a whole capture result). */
+export function casesFromCaptureData(data, label) {
   const entries = Array.isArray(data) ? data : Array.isArray(data?.originals) ? data.originals : data && typeof data.text === 'string' ? [data] : [];
   return entries
-    .filter((e) => e && typeof e.text === 'string' && typeof e.url === 'string' && /\/youtubei\/v1\//.test(e.url))
-    .map((e, i) => ({
-      name: `local/${path.relative(path.join(PATHS.fixtures, 'local'), file)}#${i}`,
+    .map((e) => (e && typeof e.text === 'string' && typeof e.url === 'string' ? { ...e, url: apiUrlOf(e) } : null))
+    .map((e, i) => (e && e.url ? {
+      name: `local/${label}#${i}`,
       endpoint: endpointOf(e.url),
       id: String(i),
       kind: 'json',
       url: e.url,
       text: e.text,
       local: true,
-    }));
+    } : null))
+    .filter(Boolean);
+}
+
+/**
+ * The API URL a hooks.js `originals` entry is replayed from. fetch/xhr entries already carry one.
+ * `initial` entries (inline page data, recorded with the page URL and a `window.<name>` target)
+ * map to the endpoint that serves the same object, so the same pruners apply: every video the
+ * player opens is a full page load (D15), so its player response is always an `initial` entry.
+ */
+function apiUrlOf(entry) {
+  if (/\/youtubei\/v1\//.test(entry.url)) return entry.url;
+  if (entry.source !== 'initial' || typeof entry.target !== 'string') return null;
+  const target = entry.target;
+  if (target === 'window.ytInitialPlayerResponse' || target.startsWith('window.ytplayer')) return ENDPOINT_URLS.player;
+  if (target === 'window.ytInitialReelWatchSequenceResponse') return ENDPOINT_URLS.reel_watch_sequence;
+  if (target === 'window.ytInitialData') {
+    let pathname = '/';
+    try { pathname = new URL(entry.url, ORIGIN).pathname; } catch (_) { /* keep '/' */ }
+    return pathname === '/watch' ? ENDPOINT_URLS.next : pathname === '/results' ? ENDPOINT_URLS.search : ENDPOINT_URLS.browse;
+  }
+  return null;
 }
 
 function walkFiles(dir) {

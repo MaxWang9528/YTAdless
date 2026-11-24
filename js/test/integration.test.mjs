@@ -36,3 +36,31 @@ test('integration › background.js + hooks.js › an unrelated response posts n
   assert.equal(page.posted('filterHit').filter((m) => m.rule === 'youThereRenderer').length, 0);
   assertClean(page);
 });
+
+test('integration › hooks.js + debug.js + ad-fixtures loader › an inline player response with ads is captured pre-prune and replays as a player case', async (t) => {
+  const { casesFromCaptureData, runCase, remainingKnownAdKeys } = await import('./ad-fixtures.mjs');
+  const page = await createPage({ role: 'player', url: 'https://m.youtube.com/watch?v=dQw4w9WgXcQ' });
+  t.after(() => page.close());
+  const response = { adPlacements: [{ adPlacementRenderer: {} }], playerAds: [{}], videoDetails: { videoId: 'dQw4w9WgXcQ' } };
+  page.runInline(`var ytInitialPlayerResponse = ${JSON.stringify(response)};`);
+  assert.equal(page.window.ytInitialPlayerResponse.adPlacements, undefined, 'pruned in the page');
+
+  const capture = await page.cmd('capture');
+  // CaptureWriter.swift writes capture.originals as <role>-originals.json.
+  const written = JSON.parse(JSON.stringify(capture.originals));
+  const initial = written.find((e) => e.source === 'initial' && e.target === 'window.ytInitialPlayerResponse');
+  assert.ok(initial, 'the inline player response is in the capture');
+  assert.ok(JSON.parse(initial.text).adPlacements, 'captured before pruning');
+
+  const cases = casesFromCaptureData(written, 'capture/player-originals.json');
+  const playerCase = cases.find((c) => c.endpoint === 'player');
+  assert.ok(playerCase, `replayed from the player endpoint: ${cases.map((c) => c.endpoint).join(', ')}`);
+  assert.ok(JSON.parse(playerCase.text).adPlacements, 'the case carries the ads, so the test can check the pruning');
+  assertClean(page);
+
+  // Replayed through the real scripts, as npm test does for js/fixtures/local/ captures.
+  const run = await runCase(createPage, playerCase);
+  t.after(() => run.page.close());
+  assert.deepEqual(remainingKnownAdKeys(run.value), [], 'no known ad keys after the replay');
+  assert.equal(run.value.videoDetails.videoId, 'dQw4w9WgXcQ', 'content intact');
+});
