@@ -661,25 +661,30 @@ Other B work:
 `PlayerLayoutView` lays out both webviews. Each one lives in a single persistent container that is
 **never removed or re-parented** (D2); mode changes only animate frame, offset and scale.
 
+**UI follows the YouTube app (user decision, 2026-11-24):** an app-like expanded watch view, and a
+mini bar above m.youtube.com's own bottom nav (the site's nav is kept; no native tab bar). The
+frozen `PlayerPresentation` enum still has `docked` and four mini corners; all of them render as
+the mini bar, and C only produces `PlayerPresentation.miniBar` (= `.mini(.bottomLeading)`).
+
 | mode | player | browse |
 |---|---|---|
 | hidden | off-screen; the WKWebView stays in the hierarchy | full screen |
-| expanded | full screen, normal watch page (`layout: page`) | behind |
-| docked | top strip, 16:9, `layout: video` | below the strip |
-| mini(corner) | floating 16:9; the docked-size view with a `CGAffineTransform` scale so the page doesn't reflow at a tiny width; `layout: video` | full screen |
+| expanded | under a slim native header (chevron, grabber, PiP); watch view with the video pinned at the top (`layout: page`) | behind |
+| mini bar (`docked`, `mini(*)`) | the full-width 16:9 player scaled to the bar's height (so the page doesn't reflow), in the leading slot of a bar pinned above the site's bottom nav; title, channel, play/pause, close, progress line; `layout: video` | full screen |
 
 Expanded in landscape becomes a full-screen video (`layout: video`); the landscape orientations
-come from Config/Info.plist. Gestures: drag down from expanded goes to mini (or to docked, past a
-threshold); tap mini to expand; drag mini to snap to a corner; fling it off-screen to `close()`.
+come from Config/Info.plist. Gestures: drag the header down (or tap the chevron) to minimize; tap
+the bar or drag it up to expand; drag it down or fling it sideways to `close()`.
 
-The native chrome for docked and mini has play/pause, close, expand, and PiP, driven by
-`session.playback`. In expanded mode, YouTube's own controls are used.
+In expanded mode, YouTube's own controls are used; PiP is in the native header.
 
-`layout.js` adds a class plus a stylesheet on `<html>`. In `video` mode it hides the top bar and
-everything else, and pins the player container to the viewport.
+`layout.js` adds a class plus a stylesheet on `<html>`. Always (player view): the app-like watch
+view hides the site's top bar and bottom nav and pins the player at `top: 0`, using the same
+offsets as YouTube's own `header-in-player` variant. In `video` mode it also hides everything else
+and pins the player container to the viewport.
 
 Pure parts go in `YTCore/Presentation`: the transition rules (`next(after: gesture)`) and the
-mini-player geometry (snap targets, velocity projection, docked height). They are tested there.
+mini bar geometry (bar frame, scale, velocity projection, progress). They are tested there.
 
 Until B merges, C can open videos through a `#if DEBUG` "Open test video" entry inside its own files.
 

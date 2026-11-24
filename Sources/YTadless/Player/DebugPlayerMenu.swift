@@ -34,10 +34,7 @@ struct DebugPlayerMenu: View {
             if session.request != nil {
                 Section("Presentation") {
                     Button("Expanded") { set(.expanded) }
-                    Button("Docked") { set(.docked) }
-                    ForEach(PlayerPresentation.Corner.allCases, id: \.self) { corner in
-                        Button("Mini \(String(describing: corner))") { set(.mini(corner)) }
-                    }
+                    Button("Mini bar") { set(.miniBar) }
                     Button("Close", role: .destructive) { store.close() }
                 }
             }

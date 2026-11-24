@@ -7,7 +7,7 @@
 // Modes only change the values fed to that chain (frame, scale, offset, clip, hit testing), so
 // SwiftUI never re-creates a container and the WKWebView is never re-parented, paused or
 // reloaded. Never wrap a container in an `if`, a `.transition` or a changing `.id`. The native
-// chrome (header, docked bar, mini overlay) is plain SwiftUI and may come and go freely.
+// chrome (expanded header, mini bar) is plain SwiftUI and may come and go freely.
 
 import SwiftUI
 import UIKit
@@ -52,6 +52,8 @@ struct PlayerLayoutView: View {
     @ViewBuilder
     private func content(layout: PlayerLayout, viewport: PresentationViewport) -> some View {
         let live = liveOffset(for: layout)
+        let isBar = layout.chrome == .miniBar
+        let bar = layout.chromeFrame ?? PlanarRect(x: 0, y: 0, width: 0, height: 0)
         // WebKit fullscreen (the page's own fullscreen button) covers everything; hide ours.
         let showsChrome = session.playback.presentation != .fullscreen
         ZStack(alignment: .topLeading) {
@@ -63,19 +65,18 @@ struct PlayerLayoutView: View {
                 .allowsHitTesting(layout.isBrowseInteractive)
                 .accessibilityHidden(!layout.isBrowseInteractive)
 
-            // Behind the status bar and the header/bar, so the strip above the video isn't see-through.
+            // Behind the status bar and the expanded header, so the strip above the page isn't
+            // see-through; it follows the drag with the player.
             Color(uiColor: .systemBackground)
-                .frame(width: viewport.size.x, height: layout.chrome == .none ? 0 : (layout.chromeFrame?.maxY ?? 0))
-                .opacity(layout.chrome == .header || layout.chrome == .dockedBar ? 1 : 0)
+                .frame(width: viewport.size.x, height: layout.chrome == .header ? bar.maxY : 0)
+                .offset(x: 0, y: live.height)
                 .allowsHitTesting(false)
 
-            // The mini-player's shadow, drawn by a sibling so the webview itself carries no shadow.
-            RoundedRectangle(cornerRadius: layout.playerCornerRadius, style: .continuous)
-                .fill(Color.black)
-                .frame(width: layout.player.width, height: layout.player.height)
-                .scaleEffect(layout.playerScale, anchor: .topLeading)
-                .shadow(color: .black.opacity(layout.chrome == .mini ? 0.35 : 0), radius: 8, y: 3)
-                .offset(x: layout.player.minX + live.width, y: layout.player.minY + live.height)
+            // The mini bar's background, behind the video.
+            MiniBarBackground()
+                .frame(width: bar.width, height: bar.height)
+                .offset(x: bar.minX + live.width, y: bar.minY + live.height)
+                .opacity(isBar && showsChrome ? 1 : 0)
                 .allowsHitTesting(false)
 
             WebViewContainer(webView: store.playerWebView)
@@ -84,12 +85,12 @@ struct PlayerLayoutView: View {
                 .clipShape(RoundedRectangle(cornerRadius: layout.playerCornerRadius, style: .continuous))
                 .scaleEffect(layout.playerScale, anchor: .topLeading)
                 .offset(x: layout.player.minX + live.width, y: layout.player.minY + live.height)
-                // Mini: the overlay takes every touch (tap, drag), so the page never sees them.
-                .allowsHitTesting(layout.isPlayerVisible && layout.chrome != .mini)
+                // Mini bar: the overlay takes every touch (tap, drag), so the page never sees them.
+                .allowsHitTesting(layout.isPlayerVisible && !isBar)
                 .accessibilityHidden(!layout.isPlayerVisible)
 
             if showsChrome, let frame = layout.chromeFrame {
-                chrome(layout.chrome, frame: frame, live: live, viewport: viewport)
+                chrome(layout: layout, frame: frame, live: live, viewport: viewport)
             }
 
             #if DEBUG
@@ -102,14 +103,14 @@ struct PlayerLayoutView: View {
     }
 
     @ViewBuilder
-    private func chrome(_ chrome: PlayerChrome, frame: PlanarRect, live: CGSize, viewport: PresentationViewport) -> some View {
+    private func chrome(layout: PlayerLayout, frame: PlanarRect, live: CGSize, viewport: PresentationViewport) -> some View {
         let actions = PlayerChromeActions(
             playback: session.playback,
             onGesture: { gesture in perform(gesture, in: viewport) },
             onPlayPause: togglePlayback,
             onPiP: startPiP
         )
-        switch chrome {
+        switch layout.chrome {
         case .none:
             EmptyView()
         case .header:
@@ -117,24 +118,23 @@ struct PlayerLayoutView: View {
                 .frame(width: frame.width, height: frame.height)
                 .offset(x: frame.minX + live.width, y: frame.minY + live.height)
                 .gesture(dragGesture(viewport: viewport))
-        case .dockedBar:
-            DockedBar(actions: actions, meta: session.playback.meta)
-                .frame(width: frame.width, height: frame.height)
-                .offset(x: frame.minX + live.width, y: frame.minY + live.height)
-                .gesture(dragGesture(viewport: viewport))
-        case .mini:
-            MiniOverlay(actions: actions)
-                .frame(width: frame.width, height: frame.height)
-                .contentShape(Rectangle())
-                .offset(x: frame.minX + live.width, y: frame.minY + live.height)
-                .onTapGesture { perform(.tap, in: viewport) }
-                .gesture(dragGesture(viewport: viewport))
+        case .miniBar:
+            let snapshot = session.playback.snapshot
+            MiniBarOverlay(
+                actions: actions,
+                meta: session.playback.meta,
+                videoWidth: layout.playerVisualFrame.maxX - frame.minX,
+                progress: MiniPlayerGeometry.progress(position: snapshot.position, duration: snapshot.duration ?? session.playback.meta?.lengthSeconds),
+                progressHeight: PresentationTuning.standard.progressHeight
+            )
+            .frame(width: frame.width, height: frame.height)
+            .offset(x: frame.minX + live.width, y: frame.minY + live.height)
+            .gesture(dragGesture(viewport: viewport))
         }
     }
 
     // MARK: Gestures
 
-    /// Window coordinates, so the scaled mini-player reports real points.
     private func dragGesture(viewport: PresentationViewport) -> some Gesture {
         DragGesture(minimumDistance: 6, coordinateSpace: .global)
             .onChanged { value in dragOffset = value.translation }
@@ -144,14 +144,18 @@ struct PlayerLayoutView: View {
             }
     }
 
-    /// How the finger moves the player for the current mode: expanded and docked only follow
-    /// downward (docked also sideways, for fling-to-close); mini follows freely.
+    /// How the finger moves the player: expanded follows downward only; the mini bar follows
+    /// vertically (damped upward), or sideways once the drag is clearly horizontal.
     private func liveOffset(for layout: PlayerLayout) -> CGSize {
         switch layout.chrome {
-        case .header: return CGSize(width: 0, height: max(0, dragOffset.height))
-        case .dockedBar: return CGSize(width: dragOffset.width, height: max(0, dragOffset.height))
-        case .mini: return dragOffset
-        case .none: return .zero
+        case .header:
+            return CGSize(width: 0, height: max(0, dragOffset.height))
+        case .miniBar:
+            let dx = dragOffset.width, dy = dragOffset.height
+            if abs(dx) > 2 * abs(dy) { return CGSize(width: dx, height: 0) }
+            return CGSize(width: 0, height: dy < 0 ? dy / 3 : dy)
+        case .none:
+            return .zero
         }
     }
 

@@ -35,11 +35,31 @@ function assertAllMatchVectors(page) {
   for (const message of page.messages) assertMatchesVector(message, message.type);
 }
 
-test(`layout.js › ${FIXTURE} › starts in page layout and adds nothing`, async (t) => {
+const WATCH_CLASS = 'ytadless-watch-view';
+const isWatchView = (page) => page.document.documentElement.classList.contains(WATCH_CLASS);
+
+test(`layout.js › ${FIXTURE} › starts in page layout with the app-like watch view on`, async (t) => {
   const page = await layoutPage(t);
   assert.equal(isVideo(page), false);
-  assert.equal(styles(page).length, 0);
+  assert.equal(isWatchView(page), true, 'top bar and bottom nav hidden from the start');
+  assert.equal(styles(page).length, 1);
   assertClean(page, 'load');
+});
+
+test(`layout.js › ${FIXTURE} › the watch view hides the site's top bar and bottom nav and pins the player at the top`, async (t) => {
+  const page = await layoutPage(t);
+  const css = styles(page)[0].textContent;
+  for (const selector of ['ytm-header', 'ytm-mobile-topbar-renderer', 'ytm-pivot-bar-renderer']) {
+    assert.ok(page.document.querySelector(`html.${WATCH_CLASS} ${selector}`), `${selector} is targeted and present`);
+    assert.match(css, new RegExp(`html\\.${WATCH_CLASS} ${selector}[^{]*\\{[^}]*display: none`));
+  }
+  assert.match(css, new RegExp(`html\\.${WATCH_CLASS} \\.player-container \\{ top: 0`));
+  assert.match(css, new RegExp(`html\\.${WATCH_CLASS} ytm-app \\{ padding-top: 0`));
+  // Kept in both page layouts.
+  await page.cmd('layout', { mode: 'video' });
+  await page.cmd('layout', { mode: 'page' });
+  assert.equal(isWatchView(page), true);
+  assertClean(page, 'watch view');
 });
 
 test(`layout.js › ${FIXTURE} › video adds the class and one stylesheet; page removes the class`, async (t) => {

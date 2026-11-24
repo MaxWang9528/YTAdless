@@ -6,19 +6,20 @@
 // Plain Doubles rather than CoreGraphics types: CGSize/CGPoint conformances differ between Darwin
 // and Linux Foundation.
 //
-// Transition table (portrait; `drag` = release point projected with UIScrollView deceleration):
+// The UI follows the YouTube app (user decision, 2026-11-24): an expanded watch view, and a mini
+// bar pinned above m.youtube.com's own bottom nav (small video on the left, title, play/pause,
+// close, progress line). The frozen `PlayerPresentation` contract still has `docked` and four
+// mini corners; all of them render as the mini bar, and `PlayerPresentation.miniBar` is the one
+// this file produces.
 //
-// | from       | tap / expand | collapse   | close | drag                                                   |
-// |------------|--------------|------------|-------|--------------------------------------------------------|
-// | hidden     | hidden       | hidden     | hidden| hidden                                                 |
-// | expanded   | expanded     | docked     | close | down < cancel: expanded · < dockFraction·H: docked · else mini(nearest corner) |
-// | docked     | expanded     | mini(↘)    | close | sideways fling off-screen: close · down ≥ cancel: mini(nearest corner) · else docked |
-// | mini(c)    | expanded     | mini(c)    | close | centre projected past an edge next to c: close · else mini(nearest corner) |
+// Transition table (portrait; `drag` = release travel projected with UIScrollView deceleration,
+// +y is down):
 //
-// Snapping and dismissal are decided separately: a fast toss across the screen lands in the far
-// corner (the projected point is clamped into the container), and only motion out through the
-// edge the player already sits against closes it. A docked close needs mostly-sideways motion,
-// so a diagonal pull down never closes.
+// | from     | tap / expand | collapse | close | drag                                                        |
+// |----------|--------------|----------|-------|-------------------------------------------------------------|
+// | hidden   | hidden       | hidden   | hidden| hidden                                                      |
+// | expanded | expanded     | miniBar  | close | down ≥ cancel: miniBar · else expanded                      |
+// | miniBar  | expanded     | miniBar  | close | up ≥ cancel: expanded · down ≥ cancel or sideways fling: close · else miniBar |
 //
 // Expanded in landscape is a full-screen video with no native chrome, so it ignores drags.
 
@@ -102,61 +103,38 @@ public struct PresentationViewport: Equatable, Hashable, Sendable {
 
 /// Every number the player UI uses. Defaults are first guesses, to be tuned on device (S-C1).
 public struct PresentationTuning: Equatable, Sendable {
-    /// Native strip above the expanded watch page (grabber, collapse, close).
+    /// Native strip above the expanded watch view (collapse chevron, grabber, PiP).
     public var headerHeight: Double
-    /// Native control bar under the docked video (title, play/pause, PiP, expand, close).
-    public var dockedBarHeight: Double
-    /// In landscape the docked video is at most this fraction of the height.
-    public var dockedMaxHeightFraction: Double
-    /// Mini-player width as a fraction of the viewport's shorter side, capped by `miniMaxWidth`.
-    public var miniWidthFraction: Double
-    public var miniMaxWidth: Double
-    /// Gap between the mini-player and the safe area.
-    public var miniMargin: Double
-    /// Extra clearance at the top and bottom so the mini-player doesn't cover YouTube's top bar
-    /// (48 pt: `.sticky-player{top:48px}`, mweb CSS 2026-11-24) or its bottom pivot bar.
-    public var miniTopClearance: Double
-    public var miniBottomClearance: Double
-    /// Corner radius of the mini-player, in visual (scaled) points.
-    public var miniCornerRadius: Double
+    /// Height of the mini bar; the video on its left is this tall (16:9).
+    public var miniBarHeight: Double
+    /// m.youtube.com's bottom nav above the safe area: `[has-pivot-bar=true] ytm-app{padding-bottom:48px}`
+    /// and `ytm-pivot-bar-renderer{… padding: 0 env(safe-area-inset-…)}` (mweb CSS, 2026-11-24).
+    public var bottomNavHeight: Double
+    /// Thickness of the progress line along the bottom of the mini bar.
+    public var progressHeight: Double
     /// UIScrollView.DecelerationRate.normal; used to project a release point from velocity.
     public var decelerationRate: Double
     /// A drag whose projected travel is shorter than this changes nothing.
     public var dragCancelDistance: Double
-    /// Expanded: a projected drag down shorter than this fraction of the height docks;
-    /// a longer one goes to mini.
-    public var dockFraction: Double
-    /// Docked: a drag closes only when its projected sideways travel is this many times its
-    /// vertical travel.
+    /// Mini bar: a drag closes sideways only when its projected sideways travel is this many
+    /// times its vertical travel.
     public var sidewaysDominance: Double
 
     public init(
-        headerHeight: Double = 36,
-        dockedBarHeight: Double = 52,
-        dockedMaxHeightFraction: Double = 0.5,
-        miniWidthFraction: Double = 0.5,
-        miniMaxWidth: Double = 240,
-        miniMargin: Double = 12,
-        miniTopClearance: Double = 48,
-        miniBottomClearance: Double = 56,
-        miniCornerRadius: Double = 10,
+        headerHeight: Double = 32,
+        miniBarHeight: Double = 60,
+        bottomNavHeight: Double = 48,
+        progressHeight: Double = 2,
         decelerationRate: Double = 0.998,
         dragCancelDistance: Double = 80,
-        dockFraction: Double = 0.4,
         sidewaysDominance: Double = 2
     ) {
         self.headerHeight = headerHeight
-        self.dockedBarHeight = dockedBarHeight
-        self.dockedMaxHeightFraction = dockedMaxHeightFraction
-        self.miniWidthFraction = miniWidthFraction
-        self.miniMaxWidth = miniMaxWidth
-        self.miniMargin = miniMargin
-        self.miniTopClearance = miniTopClearance
-        self.miniBottomClearance = miniBottomClearance
-        self.miniCornerRadius = miniCornerRadius
+        self.miniBarHeight = miniBarHeight
+        self.bottomNavHeight = bottomNavHeight
+        self.progressHeight = progressHeight
         self.decelerationRate = decelerationRate
         self.dragCancelDistance = dragCancelDistance
-        self.dockFraction = dockFraction
         self.sidewaysDominance = sidewaysDominance
     }
 
@@ -167,12 +145,12 @@ public struct PresentationTuning: Equatable, Sendable {
 
 /// A gesture or control that may change the player's presentation.
 public enum PresentationGesture: Equatable, Sendable {
-    /// A tap on the docked bar or the mini-player.
+    /// A tap on the mini bar.
     case tap
-    /// A drag on the expanded header, the docked bar or the mini-player, in window points.
+    /// A drag on the expanded header or the mini bar, in window points.
     case dragEnded(translation: PlanarVector, velocity: PlanarVector)
     case expandButton
-    /// The chevron: one step down the ladder expanded → docked → mini.
+    /// The chevron on the expanded header.
     case collapseButton
     case closeButton
 }
@@ -185,7 +163,18 @@ public enum PresentationOutcome: Equatable, Sendable {
 }
 
 extension PlayerPresentation {
+    /// The mini bar. Every `.mini(_)` and `.docked` render as it; this is the one we produce.
+    public static let miniBar = PlayerPresentation.mini(.bottomLeading)
+
     public var isVisible: Bool { self != .hidden }
+
+    /// True for every mode drawn as the mini bar (`docked` and all four corners).
+    public var isMiniBar: Bool {
+        switch self {
+        case .docked, .mini: return true
+        case .hidden, .expanded: return false
+        }
+    }
 
     /// The transition table at the top of this file.
     public func next(
@@ -200,42 +189,20 @@ extension PlayerPresentation {
         case .closeButton:
             return .close
         case .collapseButton:
-            switch self {
-            case .expanded: return .present(.docked)
-            case .docked: return .present(.mini(.bottomTrailing))
-            default: return .present(self)
-            }
+            return .present(.miniBar)
         case .dragEnded(let translation, let velocity):
-            return dragEnded(translation: translation, velocity: velocity, in: viewport, tuning: tuning)
-        }
-    }
-
-    private func dragEnded(
-        translation: PlanarVector,
-        velocity: PlanarVector,
-        in viewport: PresentationViewport,
-        tuning: PresentationTuning
-    ) -> PresentationOutcome {
-        let travel = translation + MiniPlayerGeometry.projectionDistance(velocity: velocity, decelerationRate: tuning.decelerationRate)
-        let layout = PresentationLayout.layout(for: self, in: viewport, tuning: tuning)
-        // Where the centre of the player would come to rest.
-        let restingCenter = layout.playerVisualFrame.center + travel
-        switch self {
-        case .hidden:
-            return .present(.hidden)
-        case .expanded:
-            if viewport.isLandscape || travel.y < tuning.dragCancelDistance { return .present(.expanded) }
-            if travel.y < viewport.size.y * tuning.dockFraction { return .present(.docked) }
-            return .present(.mini(MiniPlayerGeometry.snapCorner(restingCenter: restingCenter, container: viewport.size)))
-        case .docked:
+            let travel = translation + MiniPlayerGeometry.projectionDistance(velocity: velocity, decelerationRate: tuning.decelerationRate)
+            if self == .expanded {
+                if viewport.isLandscape || travel.y < tuning.dragCancelDistance { return .present(.expanded) }
+                return .present(.miniBar)
+            }
+            // Mini bar.
+            if travel.y <= -tuning.dragCancelDistance { return .present(.expanded) }
+            if travel.y >= tuning.dragCancelDistance { return .close }
             let sideways = abs(travel.x) > tuning.sidewaysDominance * abs(travel.y)
                 && abs(translation.x) >= tuning.dragCancelDistance
-            if sideways, restingCenter.x < 0 || restingCenter.x > viewport.size.x { return .close }
-            if travel.y < tuning.dragCancelDistance { return .present(.docked) }
-            return .present(.mini(MiniPlayerGeometry.snapCorner(restingCenter: restingCenter, container: viewport.size)))
-        case .mini(let corner):
-            if MiniPlayerGeometry.leavesThroughNearEdge(restingCenter, corner: corner, container: viewport.size) { return .close }
-            return .present(.mini(MiniPlayerGeometry.snapCorner(restingCenter: restingCenter, container: viewport.size)))
+                && abs(travel.x) >= viewport.size.x / 2
+            return sideways ? .close : .present(self)
         }
     }
 }
@@ -243,46 +210,28 @@ extension PlayerPresentation {
 // MARK: - Mini-player geometry
 
 public enum MiniPlayerGeometry {
-    /// Height of the docked 16:9 strip for a given container width.
-    public static func dockedHeight(forWidth width: Double) -> Double {
-        (width * 9 / 16).rounded()
-    }
-
-    /// The unscaled size of the docked video, which the mini-player reuses with a scale so the
-    /// page doesn't reflow (§6.3). Full width in portrait; in landscape at most
-    /// `dockedMaxHeightFraction` of the height, keeping 16:9.
-    public static func dockedVideoSize(in viewport: PresentationViewport, tuning: PresentationTuning = .standard) -> PlanarVector {
+    /// The unscaled size the player page lays out at in the mini bar: the full-width 16:9 video
+    /// (the bar shows it scaled down, so the page doesn't reflow at a tiny width, §6.3). In
+    /// landscape the width is capped so the height stays within half the screen.
+    public static func videoSize(in viewport: PresentationViewport) -> PlanarVector {
         let width = viewport.size.x
-        let height = dockedHeight(forWidth: width)
-        let maxHeight = (viewport.size.y * tuning.dockedMaxHeightFraction).rounded()
+        let height = (width * 9 / 16).rounded()
+        let maxHeight = (viewport.size.y / 2).rounded()
         guard height > maxHeight, maxHeight > 0 else { return PlanarVector(width, height) }
         return PlanarVector((maxHeight * 16 / 9).rounded(), maxHeight)
     }
 
-    /// The scale that turns the docked video into the mini-player.
+    /// The scale that fits the video into the mini bar's height.
     public static func miniScale(in viewport: PresentationViewport, tuning: PresentationTuning = .standard) -> Double {
-        let docked = dockedVideoSize(in: viewport, tuning: tuning)
-        guard docked.x > 0 else { return 1 }
-        let shortSide = min(viewport.size.x, viewport.size.y)
-        let width = min(shortSide * tuning.miniWidthFraction, tuning.miniMaxWidth)
-        return min(1, width / docked.x)
+        let video = videoSize(in: viewport)
+        guard video.y > 0 else { return 1 }
+        return min(1, (tuning.miniBarHeight - tuning.progressHeight) / video.y)
     }
 
-    /// The on-screen (scaled) frame of the mini-player in `corner`.
-    public static func miniFrame(_ corner: PlayerPresentation.Corner, in viewport: PresentationViewport, tuning: PresentationTuning = .standard) -> PlanarRect {
-        let docked = dockedVideoSize(in: viewport, tuning: tuning)
-        let size = docked * miniScale(in: viewport, tuning: tuning)
-        let safe = viewport.safeArea
-        let left = safe.leading + tuning.miniMargin
-        let right = viewport.size.x - safe.trailing - tuning.miniMargin - size.x
-        let top = safe.top + tuning.miniTopClearance + tuning.miniMargin
-        let bottom = viewport.size.y - safe.bottom - tuning.miniBottomClearance - tuning.miniMargin - size.y
-        switch corner {
-        case .topLeading: return PlanarRect(origin: PlanarVector(left, top), size: size)
-        case .topTrailing: return PlanarRect(origin: PlanarVector(right, top), size: size)
-        case .bottomLeading: return PlanarRect(origin: PlanarVector(left, bottom), size: size)
-        case .bottomTrailing: return PlanarRect(origin: PlanarVector(right, bottom), size: size)
-        }
+    /// The mini bar's frame: full width, just above the site's bottom nav and the safe area.
+    public static func barFrame(in viewport: PresentationViewport, tuning: PresentationTuning = .standard) -> PlanarRect {
+        let y = viewport.size.y - viewport.safeArea.bottom - tuning.bottomNavHeight - tuning.miniBarHeight
+        return PlanarRect(x: 0, y: max(viewport.safeArea.top, y), width: viewport.size.x, height: tuning.miniBarHeight)
     }
 
     /// How far a release at `velocity` (pt/s) carries on with UIScrollView-style deceleration
@@ -292,42 +241,10 @@ public enum MiniPlayerGeometry {
         return velocity * (decelerationRate / (1 - decelerationRate) / 1000)
     }
 
-    /// The corner whose quadrant contains `point`.
-    public static func nearestCorner(to point: PlanarVector, container: PlanarVector) -> PlayerPresentation.Corner {
-        let leading = point.x < container.x / 2
-        let top = point.y < container.y / 2
-        switch (top, leading) {
-        case (true, true): return .topLeading
-        case (true, false): return .topTrailing
-        case (false, true): return .bottomLeading
-        case (false, false): return .bottomTrailing
-        }
-    }
-
-    /// True when a centre point lies outside the container: more than half the player is gone.
-    public static func isOffScreen(_ center: PlanarVector, container: PlanarVector) -> Bool {
-        center.x < 0 || center.x > container.x || center.y < 0 || center.y > container.y
-    }
-
-    /// True when a mini-player in `corner` would come to rest beyond one of the two edges it sits
-    /// against (a fling out). Crossing a far edge is a toss to another corner, not a close.
-    public static func leavesThroughNearEdge(_ restingCenter: PlanarVector, corner: PlayerPresentation.Corner, container: PlanarVector) -> Bool {
-        let leading = corner == .topLeading || corner == .bottomLeading
-        let top = corner == .topLeading || corner == .topTrailing
-        let outSideways = leading ? restingCenter.x < 0 : restingCenter.x > container.x
-        let outVertically = top ? restingCenter.y < 0 : restingCenter.y > container.y
-        return outSideways || outVertically
-    }
-
-    /// The corner a projected resting centre snaps to: clamped into the container, then its quadrant.
-    public static func snapCorner(restingCenter: PlanarVector, container: PlanarVector) -> PlayerPresentation.Corner {
-        let clamped = PlanarVector(min(max(restingCenter.x, 0), container.x), min(max(restingCenter.y, 0), container.y))
-        return nearestCorner(to: clamped, container: container)
-    }
-
-    /// The corner a mini-player released with its centre at `position` and `velocity` snaps to.
-    public static func snapCorner(position: PlanarVector, velocity: PlanarVector, container: PlanarVector) -> PlayerPresentation.Corner {
-        snapCorner(restingCenter: position + projectionDistance(velocity: velocity), container: container)
+    /// Playback progress in 0…1 for the mini bar's line; 0 when the duration is unknown or live.
+    public static func progress(position: Double, duration: Double?) -> Double {
+        guard let duration, duration.isFinite, duration > 0, position.isFinite else { return 0 }
+        return min(1, max(0, position / duration))
     }
 }
 
@@ -336,21 +253,19 @@ public enum MiniPlayerGeometry {
 /// Which native controls sit over or next to the player.
 public enum PlayerChrome: Equatable, Sendable {
     case none
-    /// The expanded header strip (`chromeFrame`): grabber, collapse, close.
+    /// The expanded header strip (`chromeFrame`): collapse, grabber, PiP.
     case header
-    /// The bar under the docked video (`chromeFrame`).
-    case dockedBar
-    /// The mini-player overlay, covering `chromeFrame` (= the mini's visual frame).
-    case mini
+    /// The mini bar (`chromeFrame`): the scaled video on its left, title, play/pause, close.
+    case miniBar
 }
 
 /// Where everything goes for one presentation, in viewport points.
 public struct PlayerLayout: Equatable, Sendable {
     /// The player container's *unscaled* frame. Its size is the size the page lays out at.
     public var player: PlanarRect
-    /// Scale applied around `player.origin` (top-leading). < 1 only for mini.
+    /// Scale applied around `player.origin` (top-leading). < 1 only for the mini bar.
     public var playerScale: Double
-    /// Corner radius in unscaled points (so it looks `miniCornerRadius` after scaling).
+    /// Corner radius in unscaled points.
     public var playerCornerRadius: Double
     public var browse: PlanarRect
     public var chrome: PlayerChrome
@@ -395,24 +310,14 @@ public enum PresentationLayout {
                 browse: full, chrome: .header, chromeFrame: header, pageLayout: .page,
                 isPlayerVisible: true, isBrowseInteractive: false, hidesStatusBar: false)
 
-        case .docked:
-            let video = MiniPlayerGeometry.dockedVideoSize(in: viewport, tuning: tuning)
-            let player = PlanarRect(origin: PlanarVector(((size.x - video.x) / 2).rounded(), viewport.safeArea.top), size: video)
-            let bar = PlanarRect(x: 0, y: player.maxY, width: size.x, height: tuning.dockedBarHeight)
-            let browse = PlanarRect(x: 0, y: bar.maxY, width: size.x, height: max(0, size.y - bar.maxY))
-            return PlayerLayout(
-                player: player, playerScale: 1, playerCornerRadius: 0,
-                browse: browse, chrome: .dockedBar, chromeFrame: bar, pageLayout: .video,
-                isPlayerVisible: true, isBrowseInteractive: true, hidesStatusBar: false)
-
-        case .mini(let corner):
-            let video = MiniPlayerGeometry.dockedVideoSize(in: viewport, tuning: tuning)
+        case .docked, .mini:
+            let bar = MiniPlayerGeometry.barFrame(in: viewport, tuning: tuning)
+            let video = MiniPlayerGeometry.videoSize(in: viewport)
             let scale = MiniPlayerGeometry.miniScale(in: viewport, tuning: tuning)
-            let visual = MiniPlayerGeometry.miniFrame(corner, in: viewport, tuning: tuning)
             return PlayerLayout(
-                player: PlanarRect(origin: visual.origin, size: video), playerScale: scale,
-                playerCornerRadius: scale > 0 ? tuning.miniCornerRadius / scale : 0,
-                browse: full, chrome: .mini, chromeFrame: visual, pageLayout: .video,
+                player: PlanarRect(origin: PlanarVector(viewport.safeArea.leading, bar.minY), size: video),
+                playerScale: scale, playerCornerRadius: 0,
+                browse: full, chrome: .miniBar, chromeFrame: bar, pageLayout: .video,
                 isPlayerVisible: true, isBrowseInteractive: true, hidesStatusBar: false)
         }
     }

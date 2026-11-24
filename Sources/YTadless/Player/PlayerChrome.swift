@@ -1,9 +1,11 @@
 // Native player chrome — owner: Module C (PLAN.md §6.3).
 //
-// Expanded: a slim header above YouTube's watch page (collapse, grabber, close); YouTube's own
-// controls do the rest. Docked: a bar under the video (title, play/pause, PiP, expand, close).
-// Mini: an overlay on the floating video (play/pause, PiP, expand, close; tap also expands,
-// drag moves, fling away closes).
+// Styled after the YouTube app (user decision, 2026-11-24):
+// - Expanded: a slim strip above the watch view with the collapse chevron, a grabber and PiP.
+//   Drag it down (or tap the chevron) to minimize. YouTube's own controls do the rest.
+// - Mini bar: pinned above the site's bottom nav. The scaled player webview sits in its leading
+//   slot (PlayerLayoutView draws it there); this overlay leaves that slot clear and adds title,
+//   channel, play/pause, close and a progress line. Tap or drag up expands; drag down closes.
 // None of these hold a webview, so they can be created and dropped freely.
 
 import SwiftUI
@@ -25,31 +27,54 @@ struct ExpandedHeader: View {
     let actions: PlayerChromeActions
 
     var body: some View {
-        HStack(spacing: 0) {
-            ChromeButton(systemName: "chevron.down", label: "Collapse player") { actions.onGesture(.collapseButton) }
-            Spacer(minLength: 0)
+        ZStack {
             Capsule()
-                .fill(Color.secondary.opacity(0.5))
-                .frame(width: 40, height: 5)
+                .fill(Color.secondary.opacity(0.45))
+                .frame(width: 36, height: 5)
                 .accessibilityHidden(true)
-            Spacer(minLength: 0)
-            ChromeButton(systemName: "xmark", label: "Close player") { actions.onGesture(.closeButton) }
+            HStack(spacing: 0) {
+                ChromeButton(systemName: "chevron.down", label: "Minimize player") { actions.onGesture(.collapseButton) }
+                Spacer(minLength: 0)
+                ChromeButton(systemName: actions.isInPiP ? "pip.exit" : "pip.enter",
+                             label: "Picture in Picture", action: actions.onPiP)
+            }
+            .padding(.horizontal, 2)
         }
-        .padding(.horizontal, 4)
         .background(Color(uiColor: .systemBackground))
         .contentShape(Rectangle())
+        .accessibilityHint("Drag down to minimize")
     }
 }
 
-struct DockedBar: View {
+/// The bar's background, drawn *behind* the player webview so the video shows on top of it.
+struct MiniBarBackground: View {
+    var body: some View {
+        Rectangle()
+            .fill(Color(uiColor: .secondarySystemBackground))
+            .overlay(alignment: .top) { Divider() }
+            .shadow(color: .black.opacity(0.12), radius: 6, y: -2)
+    }
+}
+
+/// The bar's controls, drawn above the player webview. `videoWidth` is the clear leading slot.
+struct MiniBarOverlay: View {
     let actions: PlayerChromeActions
     let meta: VideoMeta?
+    let videoWidth: CGFloat
+    let progress: Double
+    let progressHeight: CGFloat
 
     var body: some View {
-        HStack(spacing: 2) {
-            VStack(alignment: .leading, spacing: 1) {
+        HStack(spacing: 0) {
+            // The video slot: transparent, but it still takes the tap (expand) and the drag.
+            Color.clear
+                .frame(width: videoWidth)
+                .contentShape(Rectangle())
+                .onTapGesture { actions.onGesture(.tap) }
+
+            VStack(alignment: .leading, spacing: 2) {
                 Text(meta?.title ?? "Loading…")
-                    .font(.subheadline.weight(.semibold))
+                    .font(.subheadline.weight(.medium))
                     .lineLimit(1)
                 if let author = meta?.author, !author.isEmpty {
                     Text(author)
@@ -58,56 +83,30 @@ struct DockedBar: View {
                         .lineLimit(1)
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.leading, 12)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            .padding(.leading, 10)
             .contentShape(Rectangle())
             .onTapGesture { actions.onGesture(.tap) }
+            .accessibilityElement(children: .combine)
             .accessibilityAddTraits(.isButton)
             .accessibilityHint("Expands the player")
 
             ChromeButton(systemName: actions.isPlaying ? "pause.fill" : "play.fill",
                          label: actions.isPlaying ? "Pause" : "Play", action: actions.onPlayPause)
-            ChromeButton(systemName: actions.isInPiP ? "pip.exit" : "pip.enter",
-                         label: "Picture in Picture", action: actions.onPiP)
-            ChromeButton(systemName: "arrow.up.left.and.arrow.down.right",
-                         label: "Expand player") { actions.onGesture(.expandButton) }
             ChromeButton(systemName: "xmark", label: "Close player") { actions.onGesture(.closeButton) }
+                .padding(.trailing, 4)
         }
-        .padding(.trailing, 4)
-        .background(Color(uiColor: .secondarySystemBackground))
-        .overlay(alignment: .bottom) { Divider() }
-    }
-}
-
-struct MiniOverlay: View {
-    let actions: PlayerChromeActions
-
-    var body: some View {
-        ZStack {
-            // Catches taps and drags over the whole mini-player.
-            Color.clear
-            Button(action: actions.onPlayPause) {
-                Image(systemName: actions.isPlaying ? "pause.fill" : "play.fill")
-                    .font(.title3)
-                    .foregroundStyle(.white)
-                    .frame(width: 44, height: 44)
-                    .background(.black.opacity(0.35), in: Circle())
+        .overlay(alignment: .bottomLeading) {
+            GeometryReader { proxy in
+                Rectangle()
+                    .fill(Color.red)
+                    .frame(width: proxy.size.width * progress, height: progressHeight)
+                    .frame(maxHeight: .infinity, alignment: .bottom)
             }
-            .accessibilityLabel(actions.isPlaying ? "Pause" : "Play")
-        }
-        .overlay(alignment: .topTrailing) {
-            MiniCornerButton(systemName: "xmark", label: "Close player") { actions.onGesture(.closeButton) }
-        }
-        .overlay(alignment: .topLeading) {
-            MiniCornerButton(systemName: actions.isInPiP ? "pip.exit" : "pip.enter",
-                             label: "Picture in Picture", action: actions.onPiP)
-        }
-        .overlay(alignment: .bottomTrailing) {
-            MiniCornerButton(systemName: "arrow.up.left.and.arrow.down.right",
-                             label: "Expand player") { actions.onGesture(.expandButton) }
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
         }
         .accessibilityElement(children: .contain)
-        .accessibilityHint("Tap to expand; drag to move; fling away to close")
     }
 }
 
@@ -119,32 +118,12 @@ private struct ChromeButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: systemName)
-                .font(.body.weight(.semibold))
+                .font(.title3)
                 .frame(width: 44, height: 44)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .foregroundStyle(.primary)
-        .accessibilityLabel(label)
-    }
-}
-
-private struct MiniCornerButton: View {
-    let systemName: String
-    let label: String
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: systemName)
-                .font(.caption.weight(.bold))
-                .foregroundStyle(.white)
-                .frame(width: 26, height: 26)
-                .background(.black.opacity(0.45), in: Circle())
-                .frame(width: 40, height: 40)  // bigger hit area than the visible disc
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
         .accessibilityLabel(label)
     }
 }

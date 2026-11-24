@@ -8,6 +8,10 @@
 // Opening a video is a full load (D15), and this script only runs at document end, so the mode
 // is kept in sessionStorage and re-applied on load; native re-sends it after each load too.
 // Re-applied on `navigation` (router.js) and when YouTube rewrites <html class>.
+//
+// Always on in the player view (an app-like watch view, user decision 2026-11-24): the site's top
+// bar and bottom nav are hidden, and the video is pinned to the top with the page scrolling
+// under it, like the YouTube app. The native header above the webview takes the top bar's place.
 (() => {
   'use strict';
 
@@ -34,6 +38,14 @@
     FILL: ['#movie_player', '.html5-video-player', '.html5-video-container'],
     VIDEO: '#player-container-id video',
     Z_INDEX: 2147483647,
+    // Watch view (always on). YouTube's own `header-in-player` variant does the same offsets
+    // (mweb inline CSS, watch page 2026-11-24): `.player-container.sticky-player.header-in-player{top:0}`,
+    // `ytm-app.sticky-player.header-in-player{padding-top:0}`; the defaults are `top:48px` and
+    // `ytm-app{padding-top:48px}`, `[has-pivot-bar=true] ytm-app{padding-bottom:48px}`.
+    WATCH_CLASS: 'ytadless-watch-view',
+    WATCH_HIDE: ['ytm-header', 'ytm-mobile-topbar-renderer', 'ytm-pivot-bar-renderer'],
+    WATCH_PLAYER: '.player-container',
+    WATCH_APP: 'ytm-app',
   });
 
   const ns = window.__ytadless;
@@ -59,6 +71,13 @@
         ' left: 0 !important; object-fit: contain !important; }',
     ].join('\n');
 
+    const watch = (selector) => `html.${CONFIG.WATCH_CLASS} ${selector}`;
+    const WATCH_CSS = [
+      `${CONFIG.WATCH_HIDE.map(watch).join(',\n')} { display: none !important; }`,
+      `${watch(CONFIG.WATCH_PLAYER)} { top: 0 !important; }`,
+      `${watch(CONFIG.WATCH_APP)} { padding-top: 0 !important; padding-bottom: 0 !important; }`,
+    ].join('\n');
+
     let mode = 'page';
 
     function load() {
@@ -78,13 +97,15 @@
       if (document.getElementById(CONFIG.STYLE_ID)) return;
       const style = document.createElement('style');
       style.id = CONFIG.STYLE_ID;
-      style.textContent = CSS;
+      style.textContent = CSS + '\n' + WATCH_CSS;
       (document.head || root()).appendChild(style);
     }
 
     function apply() {
       const html = root();
       if (!html) return;
+      ensureStyle();
+      if (!html.classList.contains(CONFIG.WATCH_CLASS)) html.classList.add(CONFIG.WATCH_CLASS);
       if (mode === 'video') {
         ensureStyle();
         if (!html.classList.contains(CONFIG.ROOT_CLASS)) html.classList.add(CONFIG.ROOT_CLASS);
@@ -117,9 +138,7 @@
     }
 
     const saved = load();
-    if (saved) {
-      mode = saved;
-      apply();
-    }
+    if (saved) mode = saved;
+    apply();
   });
 })();
