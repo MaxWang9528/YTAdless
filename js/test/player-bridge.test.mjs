@@ -3,6 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createPage, assertClean, assertMatchesVector, commandVectors, NAMESPACE } from './harness.mjs';
+import * as fakes from './media-fakes.mjs';
 
 const WATCH = 'https://m.youtube.com/watch?v=dQw4w9WgXcQ';
 const PLAYER_HTML = '<html><head><title>Never Gonna Give You Up - YouTube</title></head><body><div id="movie_player"></div></body></html>';
@@ -216,5 +217,73 @@ test('player-bridge.js › state › returns meta, playback and presentation in 
   assertMatchesVector({ v: 1, type: 'videoMeta', frame: 'main', ...state.meta }, 'state.meta');
   assertMatchesVector({ v: 1, type: 'playback', frame: 'main', ...state.playback }, 'state.playback');
   assertMatchesVector({ v: 1, type: 'presentation', frame: 'main', mode: state.presentation }, 'state.presentation');
+  assertClean(page);
+});
+
+// ── Module D additions: page intent and the in-page PiP fallback (PLAN.md §6.4, D13) ─────────
+
+test('player-bridge.js › page intent › page play()/pause() during user activation emit userIntent{page}', async (t) => {
+  const { page, ns, addVideo, activation, media } = await fakes.playerPage(t, { scripts: ['player-bridge.js'] });
+  const video = await addVideo();
+  const intents = [];
+  ns.on('userIntent', (i) => intents.push(`${i.action}:${i.source}`));
+  activation.isActive = true;
+  await video.play();
+  video.pause();
+  activation.isActive = false;
+  video.pause();  // no gesture: YouTube's own call, not intent
+  const other = page.document.createElement('video');
+  activation.isActive = true;
+  other.pause();  // not the main video
+  assert.deepEqual(intents, ['play:page', 'pause:page']);
+  assert.equal(media(video).plays, 1, 'the original play still runs');
+  assert.equal(media(video).pauses, 2, 'the original pause still runs');
+  assertClean(page);
+});
+
+test('player-bridge.js › pip fallback › no PiP within 1.5 s of a native pip shows the in-page button, persisted', async (t) => {
+  const { page, addVideo } = await fakes.playerPage(t, { scripts: ['player-bridge.js'] });
+  const video = await addVideo();
+  const modes = [];
+  video.webkitSetPresentationMode = (mode) => modes.push(mode);  // WebKit ignores it: no activation
+  assert.deepEqual(await page.cmd('pip', { enter: true }), { ok: true });
+  assert.equal(page.document.getElementById('ytadless-pip-button'), null);
+  await page.flush(1600);
+  const button = page.document.getElementById('ytadless-pip-button');
+  assert.ok(button, 'button shown');
+  assert.equal(button.parentElement.id, 'movie_player');
+  assert.equal(page.window.localStorage.getItem('ytadless.pipFallback'), '1');
+  assert.ok(page.posted('log').some((m) => m.level === 'warn' && /S-D3 fallback/.test(m.message)));
+  button.click();
+  assert.deepEqual(modes, ['picture-in-picture', 'picture-in-picture']);
+  assertClean(page);
+});
+
+test('player-bridge.js › pip fallback › a native pip that works shows no button', async (t) => {
+  const { page, win, addVideo } = await fakes.playerPage(t, { scripts: ['player-bridge.js'] });
+  const video = await addVideo();
+  video.webkitSetPresentationMode = (mode) => {
+    Object.defineProperty(video, 'webkitPresentationMode', { configurable: true, writable: true, value: mode });
+    video.dispatchEvent(new win.Event('webkitpresentationmodechanged'));
+  };
+  await page.cmd('pip', { enter: true });
+  await page.flush(1600);
+  assert.equal(page.document.getElementById('ytadless-pip-button'), null);
+  assert.deepEqual(page.posted('presentation').map((m) => m.mode), ['pip']);
+  assertClean(page);
+});
+
+test('player-bridge.js › pip fallback › once needed, the button is placed on the next load and after DOM swaps', async (t) => {
+  const page = await createPage({
+    role: 'player', url: fakes.WATCH, scripts: ['player-bridge.js'], html: fakes.PLAYER_HTML,
+    beforeScripts: (win) => { win.localStorage.setItem('ytadless.pipFallback', '1'); fakes.installMediaFakes(win); },
+  });
+  t.after(() => page.close());
+  await page.flush();
+  assert.ok(page.document.querySelector('#movie_player > #ytadless-pip-button'));
+  const player = page.document.getElementById('movie_player');
+  player.replaceWith(player.cloneNode(false));  // YouTube rebuilds the player
+  await page.flush();
+  assert.ok(page.document.querySelector('#movie_player > #ytadless-pip-button'), 're-placed');
   assertClean(page);
 });
