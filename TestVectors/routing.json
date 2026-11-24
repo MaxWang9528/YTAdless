@@ -601,6 +601,115 @@
       "expect": {
         "decision": "allow"
       }
+    },
+    {
+      "name": "browse-javascript-href",
+      "role": "browse",
+      "trigger": "click",
+      "url": "javascript:void(0)",
+      "expect": {
+        "decision": "allow"
+      }
+    },
+    {
+      "name": "browse-mailto-external",
+      "role": "browse",
+      "trigger": "click",
+      "url": "mailto:someone@example.com",
+      "expect": {
+        "decision": "openExternally",
+        "url": "mailto:someone@example.com"
+      }
+    },
+    {
+      "name": "browse-studio-external",
+      "role": "browse",
+      "trigger": "click",
+      "url": "https://studio.youtube.com/",
+      "expect": {
+        "decision": "openExternally",
+        "url": "https://studio.youtube.com/"
+      }
+    },
+    {
+      "name": "browse-youtu-be-path-id-wins",
+      "role": "browse",
+      "trigger": "click",
+      "url": "https://youtu.be/dQw4w9WgXcQ?v=jNQXAC9IVRw&t=1h2m3s",
+      "expect": {
+        "decision": "openInPlayer",
+        "request": {
+          "id": "dQw4w9WgXcQ",
+          "kind": "video",
+          "startSeconds": 3723,
+          "playlistID": null,
+          "playlistIndex": null,
+          "watchURL": "https://m.youtube.com/watch?v=dQw4w9WgXcQ&t=3723s"
+        }
+      }
+    },
+    {
+      "name": "browse-shorts-trailing-slash",
+      "role": "browse",
+      "trigger": "click",
+      "url": "https://m.youtube.com/shorts/aqz-KE-bpKQ/",
+      "expect": {
+        "decision": "openInPlayer",
+        "request": {
+          "id": "aqz-KE-bpKQ",
+          "kind": "short",
+          "startSeconds": null,
+          "playlistID": null,
+          "playlistIndex": null,
+          "watchURL": "https://m.youtube.com/shorts/aqz-KE-bpKQ"
+        }
+      }
+    },
+    {
+      "name": "browse-watch-mixed-case-host-index",
+      "role": "browse",
+      "trigger": "click",
+      "url": "https://WWW.YouTube.com/watch?v=dQw4w9WgXcQ&index=2",
+      "expect": {
+        "decision": "openInPlayer",
+        "request": {
+          "id": "dQw4w9WgXcQ",
+          "kind": "video",
+          "startSeconds": null,
+          "playlistID": null,
+          "playlistIndex": 2,
+          "watchURL": "https://m.youtube.com/watch?v=dQw4w9WgXcQ&index=2"
+        }
+      }
+    },
+    {
+      "name": "player-live-stays",
+      "role": "player",
+      "trigger": "click",
+      "url": "https://m.youtube.com/live/jfKfPfyJRdk",
+      "expect": {
+        "decision": "allow"
+      }
+    },
+    {
+      "name": "player-watch-without-valid-id",
+      "role": "player",
+      "trigger": "click",
+      "url": "https://m.youtube.com/watch?v=tooShort",
+      "expect": {
+        "decision": "openInBrowse",
+        "url": "https://m.youtube.com/watch?v=tooShort"
+      }
+    },
+    {
+      "name": "player-music-page",
+      "role": "player",
+      "trigger": "click",
+      "url": "https://music.youtube.com/library",
+      "expect": {
+        "decision": "openInBrowse",
+        "url": "https://m.youtube.com/library"
+      }
     }
   ]
 }
