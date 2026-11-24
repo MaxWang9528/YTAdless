@@ -35,6 +35,7 @@ final class WebViewStore: PlayerControlling {
     private var delegates: [WebNavigationDelegate] = []
     private var hubSubscription: AnyObject?
     private var foregroundObserver: NSObjectProtocol?
+    private var titleObservation: NSKeyValueObservation?
 
     private var rulesReady = false
     private var pendingUntilRulesReady: [@MainActor () -> Void] = []
@@ -64,6 +65,11 @@ final class WebViewStore: PlayerControlling {
             forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main
         ) { [weak self] _ in
             MainActor.assumeIsolated { self?.refreshPlayerState(reason: "foreground") }
+        }
+        // WebKit's title follows document.title after SPA navigations too; pageChanged's title is
+        // read right after pushState, before YouTube updates it.
+        titleObservation = browseWebView.observe(\.title, options: [.new]) { [weak self] webView, _ in
+            MainActor.assumeIsolated { self?.updateBrowseTitle(webView.title) }
         }
         debugLog.native(.info, "WebViewStore", "user agent application name: \(SafariUserAgent.applicationName)")
 
@@ -206,8 +212,6 @@ final class WebViewStore: PlayerControlling {
         switch event.message {
         case .route(let url, let trigger):
             handleRoute(url, trigger: trigger, role: event.role)
-        case .pageChanged(_, let title) where event.role == .browse:
-            updateBrowseTitle(title)
         case .ready where event.role == .player:
             refreshPlayerState(reason: "ready")
         default:
