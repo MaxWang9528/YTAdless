@@ -117,7 +117,41 @@ struct PresentationDragTests {
         #expect(from.next(after: drag(0, -40, velocity: 0, -1200), in: portrait) == .present(.mini(.topTrailing)))
     }
 
-    @Test("mini: a fling that carries the centre off any edge closes", arguments: PresentationCorner.allCases)
+    @Test("realistic repositioning flicks snap, never close (regressions)")
+    func flicksSnap() {
+        // A toss across the screen lands in the far corner.
+        #expect(PlayerPresentation.mini(.bottomTrailing).next(after: drag(-120, 0, velocity: -900, 0), in: portrait) == .present(.mini(.bottomLeading)))
+        #expect(PlayerPresentation.mini(.bottomTrailing).next(after: drag(-120, 0, velocity: -400, 0), in: portrait) == .present(.mini(.bottomLeading)))
+        #expect(PlayerPresentation.mini(.bottomTrailing).next(after: drag(0, -100, velocity: 0, -1500), in: portrait) == .present(.mini(.topTrailing)))
+        #expect(PlayerPresentation.mini(.bottomTrailing).next(after: drag(-150, -300, velocity: -2500, -4000), in: portrait) == .present(.mini(.topLeading)))
+        #expect(PlayerPresentation.mini(.topLeading).next(after: drag(150, 0, velocity: 2500, 0), in: portrait) == .present(.mini(.topTrailing)))
+        #expect(PlayerPresentation.mini(.topLeading).next(after: drag(0, 200, velocity: 0, 3000), in: portrait) == .present(.mini(.bottomLeading)))
+        // A diagonal pull down from docked goes to mini.
+        #expect(PlayerPresentation.docked.next(after: drag(40, 300, velocity: 500, 1500), in: portrait) == .present(.mini(.bottomTrailing)))
+        #expect(PlayerPresentation.docked.next(after: drag(-90, 250, velocity: -800, 1200), in: portrait) == .present(.mini(.bottomLeading)))
+        // A quick sideways flick without real travel doesn't close the docked player.
+        #expect(PlayerPresentation.docked.next(after: drag(30, 0, velocity: 2000, 0), in: portrait) == .present(.docked))
+    }
+
+    @Test("snapCorner clamps the projected point into the container first")
+    func snapClamps() {
+        let c = portrait.size
+        #expect(MiniPlayerGeometry.snapCorner(restingCenter: PlanarVector(-500, 700), container: c) == .bottomLeading)
+        #expect(MiniPlayerGeometry.snapCorner(restingCenter: PlanarVector(900, -50), container: c) == .topTrailing)
+    }
+
+    @Test("leavesThroughNearEdge only counts the two edges the corner sits against")
+    func nearEdges() {
+        let c = portrait.size
+        #expect(MiniPlayerGeometry.leavesThroughNearEdge(PlanarVector(400, 700), corner: .bottomTrailing, container: c))
+        #expect(MiniPlayerGeometry.leavesThroughNearEdge(PlanarVector(300, 900), corner: .bottomTrailing, container: c))
+        #expect(!MiniPlayerGeometry.leavesThroughNearEdge(PlanarVector(-10, 700), corner: .bottomTrailing, container: c))
+        #expect(!MiniPlayerGeometry.leavesThroughNearEdge(PlanarVector(300, -10), corner: .bottomTrailing, container: c))
+        #expect(MiniPlayerGeometry.leavesThroughNearEdge(PlanarVector(-10, 100), corner: .topLeading, container: c))
+        #expect(!MiniPlayerGeometry.leavesThroughNearEdge(PlanarVector(400, 900), corner: .topLeading, container: c))
+    }
+
+    @Test("mini: a fling that carries the centre out through its own edges closes", arguments: PresentationCorner.allCases)
     func miniFlingCloses(corner: PresentationCorner) {
         let mini = PlayerPresentation.mini(corner)
         let towardsEdge: Double = (corner == .topLeading || corner == .bottomLeading) ? -1 : 1

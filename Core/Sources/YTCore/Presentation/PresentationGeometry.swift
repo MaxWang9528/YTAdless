@@ -12,8 +12,13 @@
 // |------------|--------------|------------|-------|--------------------------------------------------------|
 // | hidden     | hidden       | hidden     | hidden| hidden                                                 |
 // | expanded   | expanded     | docked     | close | down < cancel: expanded · < dockFraction·H: docked · else mini(nearest corner) |
-// | docked     | expanded     | mini(↘)    | close | sideways off-screen: close · down ≥ cancel: mini(nearest corner) · else docked |
-// | mini(c)    | expanded     | mini(c)    | close | centre projected off-screen: close · else mini(nearest corner) |
+// | docked     | expanded     | mini(↘)    | close | sideways fling off-screen: close · down ≥ cancel: mini(nearest corner) · else docked |
+// | mini(c)    | expanded     | mini(c)    | close | centre projected past an edge next to c: close · else mini(nearest corner) |
+//
+// Snapping and dismissal are decided separately: a fast toss across the screen lands in the far
+// corner (the projected point is clamped into the container), and only motion out through the
+// edge the player already sits against closes it. A docked close needs mostly-sideways motion,
+// so a diagonal pull down never closes.
 //
 // Expanded in landscape is a full-screen video with no native chrome, so it ignores drags.
 
@@ -121,6 +126,9 @@ public struct PresentationTuning: Equatable, Sendable {
     /// Expanded: a projected drag down shorter than this fraction of the height docks;
     /// a longer one goes to mini.
     public var dockFraction: Double
+    /// Docked: a drag closes only when its projected sideways travel is this many times its
+    /// vertical travel.
+    public var sidewaysDominance: Double
 
     public init(
         headerHeight: Double = 36,
@@ -134,7 +142,8 @@ public struct PresentationTuning: Equatable, Sendable {
         miniCornerRadius: Double = 10,
         decelerationRate: Double = 0.998,
         dragCancelDistance: Double = 80,
-        dockFraction: Double = 0.4
+        dockFraction: Double = 0.4,
+        sidewaysDominance: Double = 2
     ) {
         self.headerHeight = headerHeight
         self.dockedBarHeight = dockedBarHeight
@@ -148,6 +157,7 @@ public struct PresentationTuning: Equatable, Sendable {
         self.decelerationRate = decelerationRate
         self.dragCancelDistance = dragCancelDistance
         self.dockFraction = dockFraction
+        self.sidewaysDominance = sidewaysDominance
     }
 
     public static let standard = PresentationTuning()
@@ -216,16 +226,16 @@ extension PlayerPresentation {
         case .expanded:
             if viewport.isLandscape || travel.y < tuning.dragCancelDistance { return .present(.expanded) }
             if travel.y < viewport.size.y * tuning.dockFraction { return .present(.docked) }
-            return .present(.mini(MiniPlayerGeometry.nearestCorner(to: restingCenter, container: viewport.size)))
+            return .present(.mini(MiniPlayerGeometry.snapCorner(restingCenter: restingCenter, container: viewport.size)))
         case .docked:
-            if MiniPlayerGeometry.isOffScreen(PlanarVector(restingCenter.x, layout.playerVisualFrame.center.y), container: viewport.size) {
-                return .close
-            }
+            let sideways = abs(travel.x) > tuning.sidewaysDominance * abs(travel.y)
+                && abs(translation.x) >= tuning.dragCancelDistance
+            if sideways, restingCenter.x < 0 || restingCenter.x > viewport.size.x { return .close }
             if travel.y < tuning.dragCancelDistance { return .present(.docked) }
-            return .present(.mini(MiniPlayerGeometry.nearestCorner(to: restingCenter, container: viewport.size)))
-        case .mini:
-            if MiniPlayerGeometry.isOffScreen(restingCenter, container: viewport.size) { return .close }
-            return .present(.mini(MiniPlayerGeometry.nearestCorner(to: restingCenter, container: viewport.size)))
+            return .present(.mini(MiniPlayerGeometry.snapCorner(restingCenter: restingCenter, container: viewport.size)))
+        case .mini(let corner):
+            if MiniPlayerGeometry.leavesThroughNearEdge(restingCenter, corner: corner, container: viewport.size) { return .close }
+            return .present(.mini(MiniPlayerGeometry.snapCorner(restingCenter: restingCenter, container: viewport.size)))
         }
     }
 }
@@ -299,9 +309,25 @@ public enum MiniPlayerGeometry {
         center.x < 0 || center.x > container.x || center.y < 0 || center.y > container.y
     }
 
+    /// True when a mini-player in `corner` would come to rest beyond one of the two edges it sits
+    /// against (a fling out). Crossing a far edge is a toss to another corner, not a close.
+    public static func leavesThroughNearEdge(_ restingCenter: PlanarVector, corner: PlayerPresentation.Corner, container: PlanarVector) -> Bool {
+        let leading = corner == .topLeading || corner == .bottomLeading
+        let top = corner == .topLeading || corner == .topTrailing
+        let outSideways = leading ? restingCenter.x < 0 : restingCenter.x > container.x
+        let outVertically = top ? restingCenter.y < 0 : restingCenter.y > container.y
+        return outSideways || outVertically
+    }
+
+    /// The corner a projected resting centre snaps to: clamped into the container, then its quadrant.
+    public static func snapCorner(restingCenter: PlanarVector, container: PlanarVector) -> PlayerPresentation.Corner {
+        let clamped = PlanarVector(min(max(restingCenter.x, 0), container.x), min(max(restingCenter.y, 0), container.y))
+        return nearestCorner(to: clamped, container: container)
+    }
+
     /// The corner a mini-player released with its centre at `position` and `velocity` snaps to.
     public static func snapCorner(position: PlanarVector, velocity: PlanarVector, container: PlanarVector) -> PlayerPresentation.Corner {
-        nearestCorner(to: position + projectionDistance(velocity: velocity), container: container)
+        snapCorner(restingCenter: position + projectionDistance(velocity: velocity), container: container)
     }
 }
 
