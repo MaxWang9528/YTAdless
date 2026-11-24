@@ -1,11 +1,21 @@
-// player-bridge.js — owner: Module D (PLAN.md §6.4). Phase 0 wrote this minimal version.
+// player-bridge.js — owner: Module D (PLAN.md §6.4).
 //
 // Tracks the main <video> of the player webview and reports it to native:
 //   posts   `playback` (~1 Hz while playing, plus every state change), `videoMeta`, `presentation`
-//   emits   `videoElement` (each time the main video is (re)attached), `userIntent` (native commands)
+//   emits   `videoElement` (each time the main video is (re)attached),
+//           `userIntent` {source:'native'} for native commands, and {source:'page'} when page code
+//           calls play()/pause() on the main video within a trusted user gesture (a tap on
+//           YouTube's controls). A page call without a gesture (for example YouTube's own
+//           background gating) is not intent, so background.js may reverse it.
 //   handles commands play · pause · seek {to} · seekBy {delta} · pip {enter} · state
 // videoMeta comes from the `playerResponse` event (hooks.js, Module A); ytInitialPlayerResponse
 // and then the DOM are fallbacks.
+//
+// PiP (D13): native sends `pip` from inside the tap handler of its button (spike S-D3). If WebKit
+// doesn't count that as user activation, PiP doesn't start; this file then shows an in-page PiP
+// button on the player (the fallback), whose tap is a real page gesture, and remembers that for
+// later loads. Presentation changes are watched by a window capture listener, which is registered
+// before background.js's stopper for YouTube's `webkitpresentationmodechanged` reactions.
 (() => {
   'use strict';
 
@@ -20,6 +30,16 @@
     TITLE_SUFFIX: /\s+-\s+YouTube$/,  // DOM fallback: document.title is "<title> - YouTube"
     META_CACHE_SIZE: 8,               // playerResponses seen for other ids (prefetch of next video)
     HAVE_FUTURE_DATA: 3,              // HTMLMediaElement.readyState
+    // A page play()/pause() this soon after a trusted gesture is the user's (§6.4: ~1.5 s).
+    GESTURE_WINDOW_MS: 1500,
+    GESTURE_EVENTS: ['pointerdown', 'pointerup', 'touchstart', 'touchend', 'mousedown', 'click', 'keydown'],
+    // In-page PiP button (D13 fallback). 'auto' = shown once a native `pip {enter}` didn't start PiP.
+    PIP_BUTTON: 'auto',                       // 'auto' | 'always' | 'never'
+    PIP_BUTTON_ID: 'ytadless-pip-button',
+    PIP_CHECK_MS: 1500,                       // native pip → presentation 'pip' within this, or fallback
+    PIP_STORAGE_KEY: 'ytadless.pipFallback',  // localStorage '1' once the fallback was needed
+    // Where the button goes: the mweb player container (2026-11 DOM; unverified on device).
+    PIP_CONTAINER_SELECTORS: ['#movie_player', '#player-container-id', '#player'],
   });
 
   const ns = window.__ytadless;
@@ -33,7 +53,7 @@
       'play', 'playing', 'pause', 'waiting', 'seeked', 'ratechange', 'durationchange', 'ended',
       'loadedmetadata', 'emptied', 'timeupdate',
     ];
-    const PRESENTATION_EVENTS = [
+    const PRESENTATION_EVENTS = [  // watched at window capture, filtered to the main video
       'webkitpresentationmodechanged', 'enterpictureinpicture', 'leavepictureinpicture',
       'webkitbeginfullscreen', 'webkitendfullscreen',
     ];
@@ -44,7 +64,10 @@
     let postedMeta = null;          // last videoMeta payload posted
     let postedMetaKey = '';
     const metaCache = new Map();    // videoId → meta from a playerResponse
+    let lastGestureAt = -Infinity;
+    let pipAttempt = null;          // {reached} for the latest native `pip {enter}`
 
+    const now = () => Date.now();
     const finiteOr = (value, fallback) => (typeof value === 'number' && Number.isFinite(value) ? value : fallback);
 
     function pageVideoId() {
@@ -149,6 +172,7 @@
       const mode = presentationOf(video);
       if (mode === presentation) return;
       presentation = mode;
+      if (mode === 'pip' && pipAttempt) pipAttempt.reached = true;
       ns.post('presentation', { mode });
     }
 
@@ -164,9 +188,12 @@
       });
     }
 
-    function onPresentationEvent() {
-      ns.guard(SOURCE, syncPresentation);
+    function onPresentationEvent(event) {
+      ns.guard(SOURCE, () => {
+        if (video && event.target === video) syncPresentation();
+      });
     }
+    for (const type of PRESENTATION_EVENTS) window.addEventListener(type, onPresentationEvent, true);
 
     function findVideo() {
       for (const selector of CONFIG.VIDEO_SELECTORS) {
@@ -180,12 +207,10 @@
       if (next === video) return;
       if (video) {
         for (const type of MEDIA_EVENTS) video.removeEventListener(type, onMediaEvent);
-        for (const type of PRESENTATION_EVENTS) video.removeEventListener(type, onPresentationEvent);
       }
       video = next;
       if (!video) return;
       for (const type of MEDIA_EVENTS) video.addEventListener(type, onMediaEvent);
-      for (const type of PRESENTATION_EVENTS) video.addEventListener(type, onPresentationEvent);
       ns.emit('videoElement', video);
       syncPresentation();
       postPlayback();
@@ -196,7 +221,130 @@
       attach(findVideo());
     }
 
-    new MutationObserver(() => ns.guard(SOURCE, scan)).observe(document, { childList: true, subtree: true });
+    // ── page intent: a tap on YouTube's own controls ────────────────────────────────────────
+    function onGesture(event) {
+      ns.guard(SOURCE, () => {
+        if (event.isTrusted) lastGestureAt = now();
+      });
+    }
+    for (const type of CONFIG.GESTURE_EVENTS) {
+      window.addEventListener(type, onGesture, { capture: true, passive: true });
+    }
+
+    function inGesture() {
+      try {
+        const activation = navigator.userActivation;
+        if (activation && activation.isActive === true) return true;
+      } catch (_) { /* not supported */ }
+      return now() - lastGestureAt <= CONFIG.GESTURE_WINDOW_MS;
+    }
+
+    function notePageCall(el, action) {
+      ns.guard(SOURCE, () => {
+        if (el === video && inGesture()) ns.emit('userIntent', { action, source: 'page' });
+      });
+    }
+
+    // Page code (YouTube) calls these; they report intent, then always call the original.
+    // Native commands below call origPlay/origPause directly and report their own intent.
+    HTMLMediaElement.prototype.play = function play() {
+      notePageCall(this, 'play');
+      return origPlay.apply(this, arguments);
+    };
+    HTMLMediaElement.prototype.pause = function pause() {
+      notePageCall(this, 'pause');
+      return origPause.apply(this, arguments);
+    };
+
+    // ── in-page PiP button (D13 fallback) ───────────────────────────────────────────────────
+    let pipButton = null;
+    let pipButtonWanted = CONFIG.PIP_BUTTON === 'always';
+    if (CONFIG.PIP_BUTTON === 'auto') {
+      try { pipButtonWanted = window.localStorage.getItem(CONFIG.PIP_STORAGE_KEY) === '1'; } catch (_) { /* no storage */ }
+    }
+
+    // Synchronous up to the WebKit call, so the tap that led here is still the activation.
+    function setPiP(v, enter) {
+      if (typeof v.webkitSetPresentationMode === 'function' &&
+          (typeof v.webkitSupportsPresentationMode !== 'function' || v.webkitSupportsPresentationMode('picture-in-picture'))) {
+        v.webkitSetPresentationMode(enter ? 'picture-in-picture' : 'inline');
+        return { ok: true };
+      }
+      if (enter && typeof v.requestPictureInPicture === 'function') {
+        return v.requestPictureInPicture().then(() => ({ ok: true }));
+      }
+      if (!enter && document.pictureInPictureElement && typeof document.exitPictureInPicture === 'function') {
+        return document.exitPictureInPicture().then(() => ({ ok: true }));
+      }
+      throw new Error('pip: not supported');
+    }
+
+    function onPipButton(event) {
+      ns.guard(SOURCE, () => {
+        event.preventDefault();
+        event.stopPropagation();
+        scan();
+        if (!video) return;
+        pipAttempt = null;  // this tap is not a test of the native path
+        const result = setPiP(video, presentationOf(video) !== 'pip');
+        if (result && typeof result.then === 'function') {
+          result.then(undefined, (e) => ns.log('warn', SOURCE, 'in-page pip failed:', e));
+        }
+      });
+    }
+
+    function makePipButton() {
+      const b = document.createElement('button');
+      b.id = CONFIG.PIP_BUTTON_ID;
+      b.type = 'button';
+      b.setAttribute('aria-label', 'Picture in picture');
+      b.textContent = '⧉';
+      Object.assign(b.style, {
+        position: 'absolute', top: '8px', right: '8px', zIndex: '2147483647',
+        width: '36px', height: '36px', padding: '0', border: '0', borderRadius: '18px',
+        background: 'rgba(0,0,0,0.55)', color: '#fff', fontSize: '20px', lineHeight: '36px',
+      });
+      b.addEventListener('click', onPipButton, true);
+      // Keep YouTube's player from also treating the tap as a tap on the video.
+      for (const type of ['pointerdown', 'pointerup', 'touchstart', 'touchend', 'mousedown', 'mouseup']) {
+        b.addEventListener(type, (e) => ns.guard(SOURCE, () => e.stopPropagation()), { passive: true });
+      }
+      return b;
+    }
+
+    function placePipButton() {
+      if (!pipButtonWanted || CONFIG.PIP_BUTTON === 'never') return;
+      if (pipButton && pipButton.isConnected) return;
+      let container = null;
+      for (const selector of CONFIG.PIP_CONTAINER_SELECTORS) {
+        container = document.querySelector(selector);
+        if (container) break;
+      }
+      if (!container) return;
+      if (!pipButton) pipButton = makePipButton();
+      container.appendChild(pipButton);
+    }
+
+    function wantPipButton(reason) {
+      if (CONFIG.PIP_BUTTON === 'never' || pipButtonWanted) return;
+      pipButtonWanted = true;
+      try { window.localStorage.setItem(CONFIG.PIP_STORAGE_KEY, '1'); } catch (_) { /* no storage */ }
+      ns.log('warn', SOURCE, 'native pip did not start (' + reason + '); showing the in-page PiP button (S-D3 fallback)');
+      placePipButton();
+    }
+
+    // A native pip that worked undoes an earlier fallback (one bad attempt must not latch forever:
+    // localStorage survives reinstalls, D20).
+    function nativePipWorks() {
+      if (CONFIG.PIP_BUTTON !== 'auto' || !pipButtonWanted) return;
+      pipButtonWanted = false;
+      try { window.localStorage.removeItem(CONFIG.PIP_STORAGE_KEY); } catch (_) { /* no storage */ }
+      if (pipButton) pipButton.remove();
+      ns.log('info', SOURCE, 'native pip works; in-page PiP button removed');
+    }
+
+    new MutationObserver(() => ns.guard(SOURCE, () => { scan(); placePipButton(); }))
+      .observe(document, { childList: true, subtree: true });
     scan();
 
     ns.on('playerResponse', (pr) => {
@@ -261,18 +409,17 @@
     ns.command('pip', (args) => {
       const v = requireVideo();
       const enter = args.enter === true;
-      if (typeof v.webkitSetPresentationMode === 'function' &&
-          (typeof v.webkitSupportsPresentationMode !== 'function' || v.webkitSupportsPresentationMode('picture-in-picture'))) {
-        v.webkitSetPresentationMode(enter ? 'picture-in-picture' : 'inline');
-        return { ok: true };
+      const attempt = enter ? { reached: false } : null;
+      pipAttempt = attempt;
+      const result = setPiP(v, enter);
+      if (attempt) {
+        // PiP reached at any point counts (the user may enter and leave it within the check).
+        setTimeout(() => ns.guard(SOURCE, () => {
+          if (attempt.reached || presentationOf(video) === 'pip') nativePipWorks();
+          else wantPipButton('no PiP within ' + CONFIG.PIP_CHECK_MS + ' ms');
+        }), CONFIG.PIP_CHECK_MS);
       }
-      if (enter && typeof v.requestPictureInPicture === 'function') {
-        return v.requestPictureInPicture().then(() => ({ ok: true }));
-      }
-      if (!enter && document.pictureInPictureElement && typeof document.exitPictureInPicture === 'function') {
-        return document.exitPictureInPicture().then(() => ({ ok: true }));
-      }
-      throw new Error('pip: not supported');
+      return result;
     });
 
     ns.command('state', () => {
