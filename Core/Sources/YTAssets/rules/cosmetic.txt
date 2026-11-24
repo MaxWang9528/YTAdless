@@ -5,7 +5,8 @@
 ! WebKit silently drops a rule whose selector is invalid, so the compiler validates selectors.
 ! These are the backstop: feed-ads.js removes the same items from the data before they render.
 
-! ── EasyList easylist_specific_hide.txt, m.youtube.com section (F7), 2026-11-24. ──
+! ── EasyList easylist_specific_hide.txt m.youtube.com rules, via PLAN.md F7 (not re-checked against
+! upstream: on 2026-11-24 the fetch could not read that part of the file). ──
 m.youtube.com##ytm-companion-slot[data-content-type] > ytm-companion-ad-renderer
 m.youtube.com##ytm-rich-item-renderer > ad-slot-renderer
 m.youtube.com##lazy-list > ad-slot-renderer

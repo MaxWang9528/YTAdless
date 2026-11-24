@@ -181,6 +181,21 @@ test('player-ads.js › fallback › a user-muted video stays muted after the ad
   assertClean(page);
 });
 
+test('player-ads.js › fallback › a stale ad-showing class never seeks the real video (duration = lengthSeconds)', async (t) => {
+  const page = await createPage({ role: 'player', html: playerHTML() });
+  t.after(() => page.close());
+  page.window.__ytadless.emit('playerResponse', { videoDetails: { videoId: 'dQw4w9WgXcQ', lengthSeconds: '15' } }, { source: 'fetch', url: 'x' });
+  const player = page.document.getElementById('movie_player');
+  const video = player.querySelector('video');
+  const time = mockVideo(video);  // duration 15 = the content
+  player.classList.add('ad-showing');
+  await page.flush();
+  assert.equal(time(), 3, 'not seeked');
+  assert.equal(video.muted, false, 'not muted');
+  assert.deepEqual(page.posted('filterHit').map((m) => m.rule), ['ad-skip-fallback'], 'still reported');
+  assertClean(page);
+});
+
 test('player-ads.js › fallback › not installed in the browse view', async (t) => {
   const page = await createPage({ role: 'browse', html: playerHTML() });
   t.after(() => page.close());

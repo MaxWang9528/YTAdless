@@ -14,13 +14,13 @@
 ! Never block googlevideo.com media, /api/stats/{playback,watchtime,qoe} or /youtubei/v1/log_event.
 ! (RulesTests checks every compiled filter against those URLs.)
 
-! ── Ad servers. EasyList easylist_adservers.txt, 2026-11-24. ──
+! ── Ad servers: the PLAN.md §6.1 starting list (EasyList-style; not re-checked against upstream). ──
 ||doubleclick.net^
 ||googlesyndication.com^
 ||googleadservices.com^
 
-! ── YouTube ad fetches and ad beacons (PLAN.md §6.1 starting list; EasyList / uBO youtube.com
-! entries, 2026-11-24). Ads that ride inside /player and /get_watch are removed by player-ads.js. ──
+! ── YouTube ad fetches and ad beacons: the PLAN.md §6.1 starting list (not re-checked against the
+! upstream lists). Ads that ride inside /player and /get_watch are removed by player-ads.js. ──
 ||youtube.com/pagead/
 ||youtube.com/api/stats/ads
 ||youtube.com/ptracking
