@@ -273,6 +273,44 @@ test('player-bridge.js › pip fallback › a native pip that works shows no but
   assertClean(page);
 });
 
+test('player-bridge.js › pip fallback › entering and leaving PiP within the check window does not latch the fallback', async (t) => {
+  const { page, win, addVideo } = await fakes.playerPage(t, { scripts: ['player-bridge.js'] });
+  const video = await addVideo();
+  const setMode = (mode) => {
+    Object.defineProperty(video, 'webkitPresentationMode', { configurable: true, writable: true, value: mode });
+    video.dispatchEvent(new win.Event('webkitpresentationmodechanged'));
+  };
+  video.webkitSetPresentationMode = setMode;
+  await page.cmd('pip', { enter: true });
+  setMode('inline');  // the user closes PiP right away
+  await page.flush(1600);
+  assert.equal(page.document.getElementById('ytadless-pip-button'), null);
+  assert.equal(page.window.localStorage.getItem('ytadless.pipFallback'), null);
+  assertClean(page);
+});
+
+test('player-bridge.js › pip fallback › a later native pip that works removes the button and clears the flag', async (t) => {
+  const page = await createPage({
+    role: 'player', url: fakes.WATCH, scripts: ['player-bridge.js'], html: fakes.PLAYER_HTML,
+    beforeScripts: (win) => { win.localStorage.setItem('ytadless.pipFallback', '1'); fakes.installMediaFakes(win); },
+  });
+  t.after(() => page.close());
+  const win = page.window;
+  const video = page.document.createElement('video');
+  page.document.getElementById('movie_player').appendChild(video);
+  await page.flush();
+  assert.ok(page.document.getElementById('ytadless-pip-button'));
+  video.webkitSetPresentationMode = (mode) => {
+    Object.defineProperty(video, 'webkitPresentationMode', { configurable: true, writable: true, value: mode });
+    video.dispatchEvent(new win.Event('webkitpresentationmodechanged'));
+  };
+  await page.cmd('pip', { enter: true });
+  await page.flush(1600);
+  assert.equal(page.document.getElementById('ytadless-pip-button'), null);
+  assert.equal(win.localStorage.getItem('ytadless.pipFallback'), null);
+  assertClean(page);
+});
+
 test('player-bridge.js › pip fallback › once needed, the button is placed on the next load and after DOM swaps', async (t) => {
   const page = await createPage({
     role: 'player', url: fakes.WATCH, scripts: ['player-bridge.js'], html: fakes.PLAYER_HTML,

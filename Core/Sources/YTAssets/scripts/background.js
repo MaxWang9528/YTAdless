@@ -235,7 +235,9 @@
     }
 
     function onPlay(event) {
-      if (event.target === video) pending = null;
+      ns.guard(SOURCE, () => {
+        if (event.target === video) pending = null;
+      });
     }
 
     ns.on('videoElement', (v) => {

@@ -16,6 +16,9 @@
 
   const SOURCE = 'media-session.js';
   const CONFIG = Object.freeze({
+    // false = leave navigator.mediaSession entirely to YouTube and WebKit (spike S-D1's "without"
+    // build). Then lock-screen pauses carry no userIntent and background.js may resume them.
+    ENABLED: true,
     SEEK_OFFSET_S: 10,
     TRANSPORT_ACTIONS: ['play', 'pause', 'seekto', 'seekbackward', 'seekforward'],
     PLAYLIST_ACTIONS: ['previoustrack', 'nexttrack'],
@@ -35,6 +38,10 @@
   if (!ns) return;
 
   ns.guard(SOURCE, () => {
+    if (!CONFIG.ENABLED) {
+      ns.log('info', SOURCE, 'disabled (CONFIG.ENABLED = false)');
+      return;
+    }
     const session = navigator.mediaSession;
     const MediaSessionClass = window.MediaSession;
     if (!session || typeof MediaSessionClass !== 'function') {

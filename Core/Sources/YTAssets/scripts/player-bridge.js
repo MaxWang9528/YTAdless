@@ -65,6 +65,7 @@
     let postedMetaKey = '';
     const metaCache = new Map();    // videoId → meta from a playerResponse
     let lastGestureAt = -Infinity;
+    let pipAttempt = null;          // {reached} for the latest native `pip {enter}`
 
     const now = () => Date.now();
     const finiteOr = (value, fallback) => (typeof value === 'number' && Number.isFinite(value) ? value : fallback);
@@ -171,6 +172,7 @@
       const mode = presentationOf(video);
       if (mode === presentation) return;
       presentation = mode;
+      if (mode === 'pip' && pipAttempt) pipAttempt.reached = true;
       ns.post('presentation', { mode });
     }
 
@@ -221,7 +223,9 @@
 
     // ── page intent: a tap on YouTube's own controls ────────────────────────────────────────
     function onGesture(event) {
-      if (event.isTrusted) lastGestureAt = now();
+      ns.guard(SOURCE, () => {
+        if (event.isTrusted) lastGestureAt = now();
+      });
     }
     for (const type of CONFIG.GESTURE_EVENTS) {
       window.addEventListener(type, onGesture, { capture: true, passive: true });
@@ -281,6 +285,7 @@
         event.stopPropagation();
         scan();
         if (!video) return;
+        pipAttempt = null;  // this tap is not a test of the native path
         const result = setPiP(video, presentationOf(video) !== 'pip');
         if (result && typeof result.then === 'function') {
           result.then(undefined, (e) => ns.log('warn', SOURCE, 'in-page pip failed:', e));
@@ -326,6 +331,16 @@
       try { window.localStorage.setItem(CONFIG.PIP_STORAGE_KEY, '1'); } catch (_) { /* no storage */ }
       ns.log('warn', SOURCE, 'native pip did not start (' + reason + '); showing the in-page PiP button (S-D3 fallback)');
       placePipButton();
+    }
+
+    // A native pip that worked undoes an earlier fallback (one bad attempt must not latch forever:
+    // localStorage survives reinstalls, D20).
+    function nativePipWorks() {
+      if (CONFIG.PIP_BUTTON !== 'auto' || !pipButtonWanted) return;
+      pipButtonWanted = false;
+      try { window.localStorage.removeItem(CONFIG.PIP_STORAGE_KEY); } catch (_) { /* no storage */ }
+      if (pipButton) pipButton.remove();
+      ns.log('info', SOURCE, 'native pip works; in-page PiP button removed');
     }
 
     new MutationObserver(() => ns.guard(SOURCE, () => { scan(); placePipButton(); }))
@@ -394,10 +409,14 @@
     ns.command('pip', (args) => {
       const v = requireVideo();
       const enter = args.enter === true;
+      const attempt = enter ? { reached: false } : null;
+      pipAttempt = attempt;
       const result = setPiP(v, enter);
-      if (enter) {
+      if (attempt) {
+        // PiP reached at any point counts (the user may enter and leave it within the check).
         setTimeout(() => ns.guard(SOURCE, () => {
-          if (presentationOf(video) !== 'pip') wantPipButton('no PiP within ' + CONFIG.PIP_CHECK_MS + ' ms');
+          if (attempt.reached || presentationOf(video) === 'pip') nativePipWorks();
+          else wantPipButton('no PiP within ' + CONFIG.PIP_CHECK_MS + ' ms');
         }), CONFIG.PIP_CHECK_MS);
       }
       return result;
