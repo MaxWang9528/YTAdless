@@ -339,16 +339,16 @@
       };
       walk(root, 0);
       if (removed > 0) ns.log('info', SOURCE, 'pruned ' + removed + ' ' + CONFIG.YOU_THERE_KEY);
-      return root;
+      return removed;
     }
 
     const hooks = ns.hooks;
     if (hooks && typeof hooks.addPruner === 'function') {
-      // Assumed contract (§5.2; hooks.js unmerged): fn(json) prunes in place, and returns the
-      // same object in case the engine uses the return value.
+      // hooks.js contract: fn(value, ctx) edits value in place and returns the number of removals
+      // (posted as filterHit under `name` when > 0).
       ns.guard(SOURCE, () => hooks.addPruner({
         name: CONFIG.YOU_THERE_KEY,
-        fn: (json) => { ns.guard(SOURCE, () => pruneYouThere(json)); return json; },
+        fn: (json) => ns.guard(SOURCE, () => pruneYouThere(json)) || 0,
       }));
     } else {
       ns.log('debug', SOURCE, 'hooks.addPruner unavailable; youThereRenderer pruned only from playerResponse events');

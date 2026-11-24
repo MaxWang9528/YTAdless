@@ -38,11 +38,13 @@ test('cosmetic.txt › rules › every line is domain##selector scoped to m.yout
 });
 
 test('cosmetic.txt › dom fixtures › at least one page with ad and content markers', () => {
+  // Not every DOM fixture carries ads (Module C's watch skeleton has none); those still count for
+  // the "never hides content" check below.
   assert.ok(pages.length > 0);
-  for (const p of pages) {
-    assert.ok(p.document.querySelector('[data-test-ad]'), `${p.name}: has ads`);
-    assert.ok(p.document.querySelector('[data-test-content]'), `${p.name}: has content`);
-  }
+  assert.ok(
+    pages.some((p) => p.document.querySelector('[data-test-ad]') && p.document.querySelector('[data-test-content]')),
+    `no DOM fixture has both [data-test-ad] and [data-test-content]: ${pages.map((p) => p.name).join(', ')}`,
+  );
 });
 
 for (const r of rules) {

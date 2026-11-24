@@ -344,7 +344,7 @@ test('background.js › youThereRenderer › registered through hooks.addPruner 
   assert.equal(pruners.length, 1);
   assert.equal(pruners[0].name, 'youThereRenderer');
   const json = { contents: [{ youThereRenderer: {} }, { videoPrimaryInfoRenderer: {} }] };
-  assert.equal(pruners[0].fn(json), json, 'returns the same object');
+  assert.equal(pruners[0].fn(json), 1, 'returns the number removed (hooks.js contract)');
   assert.deepEqual(json, { contents: [{ videoPrimaryInfoRenderer: {} }] });
   assertClean(page);
 });

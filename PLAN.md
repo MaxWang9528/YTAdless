@@ -585,8 +585,10 @@ There is no DOM-based procedural filtering in v1.
 
 1. No known ad key remains anywhere after pruning.
 2. Content survives: `videoDetails`, `streamingData`, and the count of non-ad feed items are unchanged.
-3. An **unknown-ad-key scan** lists any remaining key matching `/(^|[a-z])(ad|ads|promo|promoted|sponsor)[A-Z_]/i`
-   that isn't in `js/fixtures/ad-key-allowlist.json`. This is how a renamed ad renderer surfaces
+3. An **unknown-ad-key scan** lists any remaining key that has `ad`/`ads`/`promo(ted)`/`sponsor(ed)`
+   as a camelCase word (`AD_KEY_PATTERN` in `js/test/ad-fixtures.mjs`) and isn't in
+   `js/fixtures/ad-key-allowlist.json`. (The first draft's case-insensitive regex matched `header`,
+   `metadata` and `badges` and missed `playerAds`.) This is how a renamed ad renderer surfaces
    as soon as a fresh fixture lands.
 
 `npm run report` prints hits per rule per fixture, which shows which rule stopped matching new
