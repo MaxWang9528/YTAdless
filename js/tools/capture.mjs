@@ -17,8 +17,8 @@
 // ANONYMOUS ONLY. It never reads or sends account cookies or credentials: each run starts a
 // fresh signed-out session (only the visitor cookies YouTube sets on the first response).
 // Responses are scrubbed before writing: the client IP (remoteHost, `ip=` and `/ip/…/` in
-// googlevideo URLs, and every other occurrence of that address) and visitorData. The run fails
-// if the address still appears anywhere afterwards.
+// googlevideo URLs, and every other occurrence of that address), visitorData, and YouTube's public
+// Google API keys. The run fails if the address or a key still appears anywhere afterwards.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -143,6 +143,8 @@ function learnIPs(text, session) {
   for (const ip of [...session.ip]) session.ip.add(encodeURIComponent(ip));
 }
 
+const GOOGLE_API_KEY = /AIza[0-9A-Za-z_-]{35}/g;
+
 function scrub(text, session) {
   learnIPs(text, session);
   let out = text
@@ -153,7 +155,10 @@ function scrub(text, session) {
     .replace(/("(?:VISITOR_DATA|XSRF_TOKEN|DATASYNC_ID)"\s*:\s*")[^"]*"/g, '$1REDACTED"')
     // Inside the hex-escaped ytInitialData strings of the HTML pages: visitorData\x22:\x22…\x22
     .replace(/((?:visitorData|VISITOR_DATA)\\x22:\\x22)[^\\"']*/g, '$1REDACTED')
-    .replace(/(remoteHost\\x22:\\x22)[^\\"']*/g, '$10.0.0.0');
+    .replace(/(remoteHost\\x22:\\x22)[^\\"']*/g, '$10.0.0.0')
+    // YouTube's public web-client API keys (INNERTUBE_API_KEY, LINK_API_KEY, VOZ_API_KEY): served
+    // to every visitor, not ours, but GitHub secret scanning flags anything shaped like a Google key.
+    .replace(GOOGLE_API_KEY, 'REDACTED_GOOGLE_API_KEY');
   for (const ip of session.ip) out = out.split(ip).join('0.0.0.0');
   if (session.visitorData) out = out.split(session.visitorData).join('REDACTED');
   return out;
@@ -165,6 +170,7 @@ function assertScrubbed(file, text, session) {
   }
   if (/"remoteHost":"(?!0\.0\.0\.0")|remoteHost\\x22:\\x22(?!0\.0\.0\.0)/.test(text)) throw new Error(`${file}: remoteHost not scrubbed`);
   if (/"visitorData":"(?!REDACTED")|visitorData\\x22:\\x22(?!REDACTED)/i.test(text)) throw new Error(`${file}: visitorData not scrubbed`);
+  if (new RegExp(GOOGLE_API_KEY.source).test(text)) throw new Error(`${file}: Google API key not scrubbed`);
 }
 
 // ── Main ───────────────────────────────────────────────────────────────────────────────────
