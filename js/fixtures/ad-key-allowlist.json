@@ -1,0 +1,6 @@
+{
+  "description": "Ad-like keys (js/test/ad-fixtures.mjs AD_KEY_PATTERN) that are allowed to remain after pruning, each with the reason. Owner: Module A (PLAN.md §6.1). Add a key here only after deciding it is not an ad YouTube renders; prune only what uBO prunes on m.youtube.com.",
+  "keys": {
+    "adBreakHeartbeatParams": "Opaque token in every /player response (with or without ads), 2026-11-24 fixtures. No uBO m.youtube.com rule prunes it; the ads it would fetch go through /youtubei/v1/player/ad_break, which rules/network.txt blocks. Pruning more than uBO does is a detection risk."
+  }
+}

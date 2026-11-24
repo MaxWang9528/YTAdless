@@ -1,0 +1,43 @@
+<!doctype html>
+<!--
+  SYNTHETIC DOM fixture (Module A, 2026-11-24). m.youtube.com renders in the client, so an
+  anonymous HTTP capture contains no rendered DOM. This page reproduces the element structure
+  that EasyList's m.youtube.com rules (F7) and the PLAN.md §6.1 candidates describe, so the
+  cosmetic test can check every selector. Replace it with a real Debug › Capture DOM (from a
+  signed-out session) when one is available.
+  data-test-ad marks what must be hidden; data-test-content marks what must stay visible.
+-->
+<html>
+<head><title>YouTube</title></head>
+<body>
+<ytm-app>
+  <ytm-mobile-topbar-renderer data-test-content></ytm-mobile-topbar-renderer>
+  <ytm-statement-banner-renderer data-test-ad><div>Get YouTube Premium</div></ytm-statement-banner-renderer>
+  <ytm-browse>
+    <ytm-rich-grid-renderer>
+      <div class="rich-grid-renderer-contents">
+        <ytm-rich-item-renderer data-test-content><ytm-video-with-context-renderer data-test-content><a href="/watch?v=dQw4w9WgXcQ">Video</a></ytm-video-with-context-renderer></ytm-rich-item-renderer>
+        <ytm-rich-item-renderer data-test-ad><ad-slot-renderer data-test-ad><ytm-promoted-sparkles-web-renderer data-test-ad>Sponsored</ytm-promoted-sparkles-web-renderer></ad-slot-renderer></ytm-rich-item-renderer>
+        <ytm-rich-item-renderer data-test-content><ytm-video-with-context-renderer data-test-content><a href="/watch?v=kJQP7kiw5Fk">Video</a></ytm-video-with-context-renderer></ytm-rich-item-renderer>
+        <ytm-rich-section-renderer data-test-content><ytm-reel-shelf-renderer data-test-content></ytm-reel-shelf-renderer></ytm-rich-section-renderer>
+      </div>
+    </ytm-rich-grid-renderer>
+  </ytm-browse>
+  <ytm-search>
+    <ytm-section-list-renderer>
+      <lazy-list>
+        <ytm-compact-video-renderer data-test-content><a href="/watch?v=JGwWNGJdvx8">Result</a></ytm-compact-video-renderer>
+        <ad-slot-renderer data-test-ad><ytm-promoted-video-renderer data-test-ad>Promoted</ytm-promoted-video-renderer></ad-slot-renderer>
+        <ytm-promoted-video-renderer data-test-ad>Promoted</ytm-promoted-video-renderer>
+        <ytm-compact-video-renderer data-test-content><a href="/watch?v=0e3GPea1Tyg">Result</a></ytm-compact-video-renderer>
+      </lazy-list>
+    </ytm-section-list-renderer>
+  </ytm-search>
+  <ytm-watch>
+    <ytm-companion-slot data-content-type="companion" data-test-content><ytm-companion-ad-renderer data-test-ad>Ad</ytm-companion-ad-renderer></ytm-companion-slot>
+    <ytm-item-section-renderer data-test-content><ytm-video-with-context-renderer data-test-content></ytm-video-with-context-renderer></ytm-item-section-renderer>
+  </ytm-watch>
+  <ytm-mealbar-promo-renderer data-test-ad><div>Try YouTube Premium</div></ytm-mealbar-promo-renderer>
+</ytm-app>
+</body>
+</html>
