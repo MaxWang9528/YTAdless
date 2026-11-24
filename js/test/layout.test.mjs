@@ -1,0 +1,187 @@
+// layout.js (PLAN.md §6.3). Owner: Module C.
+
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { createPage, assertClean, assertMatchesVector, fixture, commandVectors } from './harness.mjs';
+
+const WATCH = 'https://m.youtube.com/watch?v=dQw4w9WgXcQ';
+const FIXTURE = '2026-11-24-watch-skeleton-dQw4w9WgXcQ.html';
+const SKELETON = fixture('dom', FIXTURE);
+const ROOT_CLASS = 'ytadless-layout-video';
+const STYLE_ID = 'ytadless-layout-style';
+const STORAGE_KEY = 'ytadless.layout';
+
+// What the player JS adds after load (not in the server HTML): mweb 2026-11.
+function hydrate(document) {
+  const player = document.getElementById('player');
+  player.innerHTML = '<div id="movie_player" class="html5-video-player"><div class="html5-video-container">'
+    + '<video class="html5-main-video" style="width: 393px; height: 221px; left: 0px; top: 0px;"></video></div></div>';
+  const app = document.querySelector('ytm-app');
+  app.insertAdjacentHTML('afterbegin', '<ytm-mobile-topbar-renderer></ytm-mobile-topbar-renderer>');
+  app.insertAdjacentHTML('beforeend', '<ytm-pivot-bar-renderer></ytm-pivot-bar-renderer>');
+}
+
+async function layoutPage(t, options = {}) {
+  const page = await createPage({ role: 'player', url: WATCH, scripts: ['layout.js'], html: SKELETON, ...options });
+  t.after(() => page.close());
+  hydrate(page.document);
+  return page;
+}
+
+const isVideo = (page) => page.document.documentElement.classList.contains(ROOT_CLASS);
+const styles = (page) => page.document.querySelectorAll(`#${STYLE_ID}`);
+
+function assertAllMatchVectors(page) {
+  for (const message of page.messages) assertMatchesVector(message, message.type);
+}
+
+test(`layout.js › ${FIXTURE} › starts in page layout and adds nothing`, async (t) => {
+  const page = await layoutPage(t);
+  assert.equal(isVideo(page), false);
+  assert.equal(styles(page).length, 0);
+  assertClean(page, 'load');
+});
+
+test(`layout.js › ${FIXTURE} › video adds the class and one stylesheet; page removes the class`, async (t) => {
+  const page = await layoutPage(t);
+  assert.deepEqual(await page.cmd('layout', { mode: 'video' }), { ok: true, mode: 'video' });
+  assert.equal(isVideo(page), true);
+  assert.equal(styles(page).length, 1);
+  assert.equal(styles(page)[0].parentNode, page.document.head);
+
+  assert.deepEqual(await page.cmd('layout', { mode: 'video' }), { ok: true, mode: 'video' });
+  assert.equal(styles(page).length, 1, 'stylesheet is injected once');
+
+  assert.deepEqual(await page.cmd('layout', { mode: 'page' }), { ok: true, mode: 'page' });
+  assert.equal(isVideo(page), false);
+  await page.cmd('layout', { mode: 'video' });
+  assert.equal(styles(page).length, 1);
+  assertClean(page, 'after commands');
+  assertAllMatchVectors(page);
+});
+
+test(`layout.js › ${FIXTURE} › video hides the app and chrome and pins the player`, async (t) => {
+  const page = await layoutPage(t);
+  const { document, window } = page;
+  const css = (selector) => window.getComputedStyle(document.querySelector(selector));
+  assert.notEqual(css('ytm-app').visibility, 'hidden');
+  assert.notEqual(css('#player-container-id').position, 'fixed');
+
+  await page.cmd('layout', { mode: 'video' });
+  assert.equal(css('ytm-app').visibility, 'hidden');
+  assert.equal(css('ytm-app').pointerEvents, 'none');
+  for (const selector of ['ytm-mobile-topbar-renderer', 'ytm-pivot-bar-renderer', 'ytm-header']) {
+    assert.equal(css(selector).display, 'none', selector);
+  }
+  const container = css('#player-container-id');
+  assert.equal(container.position, 'fixed');
+  assert.equal(container.top, '0px');
+  assert.equal(container.height, '100%');
+  assert.equal(container.visibility, 'visible');
+  assert.equal(css('#player').height, '100%');
+  assert.equal(css('#player').paddingTop, '0px');
+  // !important beats the player's inline size.
+  assert.equal(css('video').width, '100%');
+  assert.equal(css('video').objectFit, 'contain');
+
+  await page.cmd('layout', { mode: 'page' });
+  assert.notEqual(css('#player-container-id').position, 'fixed');
+  assert.notEqual(css('ytm-app').visibility, 'hidden');
+});
+
+test(`layout.js › ${FIXTURE} › every stylesheet selector is valid and matches the fixture`, async (t) => {
+  const page = await layoutPage(t);
+  await page.cmd('layout', { mode: 'video' });
+  const sheet = styles(page)[0].sheet;
+  assert.ok(sheet.cssRules.length >= 6);
+  for (const rule of sheet.cssRules) {
+    for (const selector of rule.selectorText.split(',').map((s) => s.trim())) {
+      let matches;
+      assert.doesNotThrow(() => { matches = page.document.querySelectorAll(selector); }, selector);
+      assert.ok(matches.length > 0, `${selector} matches the hydrated fixture`);
+    }
+  }
+});
+
+test(`layout.js › ${FIXTURE} › rejects an unknown mode without a scriptError and keeps the current one`, async (t) => {
+  const page = await layoutPage(t);
+  await page.cmd('layout', { mode: 'video' });
+  assert.deepEqual(await page.cmd('layout', { mode: 'tiny' }), { error: 'invalid-mode: tiny' });
+  assert.deepEqual(await page.cmd('layout', {}), { error: 'invalid-mode: undefined' });
+  assert.equal(isVideo(page), true);
+  assertClean(page, 'bad args');
+});
+
+test(`layout.js › ${FIXTURE} › the commands.json vector works as sent by native`, async (t) => {
+  const page = await layoutPage(t);
+  const vector = commandVectors().commands.find((c) => c.name === 'layout');
+  assert.equal(vector.handler, 'layout.js');
+  assert.deepEqual(await page.cmd(vector.name, vector.args), { ok: true, mode: vector.args.mode });
+});
+
+test(`layout.js › ${FIXTURE} › the mode survives a full load through sessionStorage`, async (t) => {
+  const first = await layoutPage(t);
+  await first.cmd('layout', { mode: 'video' });
+  assert.equal(first.window.sessionStorage.getItem(STORAGE_KEY), 'video');
+
+  // A new document in the same tab: storage carries over, the script re-applies at document end.
+  const second = await layoutPage(t, {
+    beforeScripts: (win) => win.sessionStorage.setItem(STORAGE_KEY, 'video'),
+  });
+  assert.equal(isVideo(second), true);
+  assert.equal(styles(second).length, 1);
+
+  const third = await layoutPage(t, {
+    beforeScripts: (win) => win.sessionStorage.setItem(STORAGE_KEY, 'page'),
+  });
+  assert.equal(isVideo(third), false);
+  assertClean(second, 'restored');
+  assertClean(third, 'restored page');
+});
+
+test(`layout.js › ${FIXTURE} › ignores junk in sessionStorage and survives blocked storage`, async (t) => {
+  const junk = await layoutPage(t, { beforeScripts: (win) => win.sessionStorage.setItem(STORAGE_KEY, '<b>') });
+  assert.equal(isVideo(junk), false);
+  assertClean(junk, 'junk');
+
+  const blocked = await layoutPage(t, {
+    beforeScripts: (win) => {
+      Object.defineProperty(win, 'sessionStorage', { configurable: true, get() { throw new win.DOMException('denied', 'SecurityError'); } });
+    },
+  });
+  assert.deepEqual(await blocked.cmd('layout', { mode: 'video' }), { ok: true, mode: 'video' });
+  assert.equal(isVideo(blocked), true);
+  assertClean(blocked, 'blocked storage');
+});
+
+test(`layout.js › ${FIXTURE} › re-applies after YouTube rewrites <html class> and on navigation`, async (t) => {
+  const page = await layoutPage(t);
+  await page.cmd('layout', { mode: 'video' });
+  page.document.documentElement.className = 'something-else';
+  await page.flush();  // MutationObserver
+  assert.equal(isVideo(page), true);
+  assert.ok(page.document.documentElement.classList.contains('something-else'));
+
+  // Drop the stylesheet, then fire the event router.js emits on an SPA URL change.
+  page.document.getElementById(STYLE_ID).remove();
+  page.window.__ytadless.emit('navigation', { url: WATCH });
+  assert.equal(styles(page).length, 1, 'stylesheet restored on navigation');
+  assertClean(page, 'reapply');
+});
+
+test('layout.js › bare page › loads and handles the command with no player DOM', async (t) => {
+  const page = await createPage({ role: 'player', url: WATCH, scripts: ['layout.js'] });
+  t.after(() => page.close());
+  assert.deepEqual(await page.cmd('layout', { mode: 'video' }), { ok: true, mode: 'video' });
+  assert.equal(isVideo(page), true);
+  assertClean(page, 'bare');
+});
+
+test('layout.js › all scripts › works alongside every other player script', async (t) => {
+  const page = await createPage({ role: 'player', url: WATCH, html: SKELETON });
+  t.after(() => page.close());
+  assert.deepEqual(await page.cmd('layout', { mode: 'video' }), { ok: true, mode: 'video' });
+  assert.equal(isVideo(page), true);
+  assertClean(page, 'all scripts');
+  assertAllMatchVectors(page);
+});
