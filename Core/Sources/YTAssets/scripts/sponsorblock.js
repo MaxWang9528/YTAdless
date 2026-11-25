@@ -10,8 +10,8 @@
 //            Same validation and video check. Suggestions are drawn striped (outlined, fainter)
 //            on the seek bar. A suggestion overlapping a real segment is not drawn, skipped or prompted.
 //            `autoSkip` (a boolean; missing = true for sponsorSegments, false for suggestions):
-//            true = skipped automatically with an Undo toast; false = when the playhead enters one,
-//            a toast offers Skip ("Sponsor" or "Possible sponsor"; once per segment per load,
+//            true = skipped automatically with an Undo toast; false = from PROMPT_LEAD_S (3 s) before
+//            its start, a toast offers Skip ("Sponsor" or "Possible sponsor"; once per segment per load,
 //            seeking back before its start re-arms it). Nothing with autoSkip false is skipped untapped.
 //            `captionTracks {}` → {videoId: string|null, tracks: [{baseUrl, languageCode, kind, name}]}
 //            for the page's current video, from the `playerResponse` event (per-video cache, so a
@@ -58,6 +58,8 @@
     TOAST_CONTAINER_SELECTORS: ['#movie_player', '#player-container-id', '#player'],
     TOAST_ID: 'ytadless-sponsorblock-toast',
     TOAST_MS: 4000,
+    TOAST_INSET_PX: 12,         // from the player's left edge
+    TOAST_BOTTOM_PX: 48,        // above the player's bottom edge (clear of the seek bar)
     // Seek bar the markers go in, first match wins. mweb class names as of 2024–2026 (the
     // SponsorBlock extension's mobile selectors and YouTube's shared progress bar); NOT in a
     // fixture and unverified on device (2026-11-25): Debug › Capture a watch page to confirm.
@@ -111,6 +113,9 @@
     SUGGESTED_STRIPE_PX: 4,
     // Suggestion prompt: visible while the playhead is inside the segment, at most this long.
     SUGGEST_TOAST_MS: 8000,
+    // A Skip button (autoSkip false) appears this long before its segment starts (user request,
+    // 2026-11-25), and stays PROMPT_LEAD_S longer than SUGGEST_TOAST_MS.
+    PROMPT_LEAD_S: 3,
     // Caption tracks (player fixtures 2026-11-24-player-*.json: captions.playerCaptionsTracklistRenderer
     // .captionTracks[] with a relative baseUrl `/api/timedtext?v=…&lang=…`, languageCode, kind
     // 'asr' on auto-captions only, name {runs:[{text}]}; {simpleText} in older responses).
@@ -239,6 +244,7 @@
     const byStart = (a, b) => a.start - b.start || a.end - b.end;
 
     function check() {
+      placeToast();
       const id = pageVideoId();
       const real = realSegments(id);
       const suggested = activeSuggestions(id);
@@ -290,10 +296,15 @@
     }
 
     // ── Skip prompts (autoSkip false: never skipped without a tap) ─────────────────────────
+    // From PROMPT_LEAD_S before the start until the end, with the same end rules as `inside`.
+    const promptWindow = (segment, t, duration) =>
+      inside({ ...segment, start: Math.max(0, segment.start - CONFIG.PROMPT_LEAD_S) }, t, duration) &&
+      !(duration > 0 && segment.start >= duration - CONFIG.END_GUARD_S);
+
     function checkPrompts(list, t, duration) {
-      // Being before a prompted segment's start means the user seeked back: prompt it again.
-      for (const s of list) if (t < s.start) prompted.delete(s.key);
-      const here = list.find((s) => inside(s, t, duration)) || null;
+      // Being before a prompted segment's window means the user seeked back: prompt it again.
+      for (const s of list) if (t < s.start - CONFIG.PROMPT_LEAD_S) prompted.delete(s.key);
+      const here = list.find((s) => promptWindow(s, t, duration)) || null;
       if (toastKind === 'suggest' && (!here || here.key !== toastKey)) hideToast();
       // An automatic-skip toast takes precedence; the prompt waits (unprompted) until it is gone.
       if (!here || prompted.has(here.key) || toastKind === 'skip') return;
@@ -301,7 +312,7 @@
       ns.log('info', SOURCE, (here.suggested ? 'suggestion: possible ' : 'prompt: ') + here.category + ' at ' +
         t.toFixed(1) + ' s (segment ' + here.start + '–' + here.end + '); prompting, not skipping');
       showToast({
-        kind: 'suggest', key: here.key, ms: CONFIG.SUGGEST_TOAST_MS, button: 'Skip',
+        kind: 'suggest', key: here.key, ms: CONFIG.SUGGEST_TOAST_MS + CONFIG.PROMPT_LEAD_S * 1000, button: 'Skip',
         text: here.suggested ? 'Possible ' + label(here) : capitalised(label(here)),
         onTap: () => skipByTap(here),
       });
@@ -333,16 +344,36 @@
 
     function stopPropagation(el) {
       // Keep YouTube's player from treating taps on the toast as taps on the video.
-      for (const type of ['pointerdown', 'pointerup', 'touchstart', 'touchend', 'mousedown', 'mouseup', 'click']) {
+      for (const type of ['pointerdown', 'pointerup', 'pointercancel', 'touchstart', 'touchmove', 'touchend',
+        'mousedown', 'mouseup', 'click', 'dblclick']) {
         el.addEventListener(type, (e) => ns.guard(SOURCE, () => e.stopPropagation()), { passive: true });
+      }
+    }
+
+    // The toast lives on <body> (position: fixed) over the player's bottom-left corner, not inside
+    // the player: on device (2026-11-25) a toast inside #movie_player sat under mweb's control
+    // layer, so a tap on Skip opened the controls instead. Re-placed on every check (~4 Hz).
+    function placeToast() {
+      if (!toast) return;
+      const player = findPlayer();
+      const r = player ? rectOf(player) : null;
+      const inset = CONFIG.TOAST_INSET_PX;
+      if (r && r.width > 0 && r.height > 0) {
+        const viewportHeight = finiteOr(window.innerHeight, 0) || finiteOr(document.documentElement.clientHeight, 0);
+        toast.style.left = Math.round(r.left + inset) + 'px';
+        toast.style.bottom = Math.round(Math.max(0, viewportHeight - r.bottom) + CONFIG.TOAST_BOTTOM_PX) + 'px';
+        toast.style.maxWidth = Math.round(Math.max(0, r.width - 2 * inset)) + 'px';
+      } else {
+        toast.style.left = inset + 'px';
+        toast.style.bottom = CONFIG.TOAST_BOTTOM_PX + 'px';
+        toast.style.maxWidth = 'calc(100% - ' + 2 * inset + 'px)';
       }
     }
 
     // One toast at a time (one id): a new one replaces the old.
     function showToast({ kind, key, text, button: buttonText, onTap, ms }) {
       hideToast();
-      const container = findPlayer();
-      const root = container || document.body;
+      const root = document.body || document.documentElement;
       if (!root) return;
 
       const box = document.createElement('div');
@@ -350,10 +381,10 @@
       box.dataset.kind = kind;
       box.setAttribute('role', 'status');
       Object.assign(box.style, {
-        position: container ? 'absolute' : 'fixed', left: '12px', bottom: '48px', zIndex: '2147483647',
+        position: 'fixed', left: '12px', bottom: '48px', zIndex: '2147483647', touchAction: 'manipulation',
         display: 'flex', alignItems: 'center', gap: '12px', padding: '8px 12px', borderRadius: '8px',
         background: 'rgba(0,0,0,0.8)', color: '#fff', font: '14px/1.3 -apple-system, sans-serif',
-        pointerEvents: 'auto', maxWidth: 'calc(100% - 24px)', boxSizing: 'border-box',
+        pointerEvents: 'auto', boxSizing: 'border-box',
       });
       const label = document.createElement('span');
       label.textContent = text;
@@ -373,6 +404,7 @@
       box.appendChild(button);
       root.appendChild(box);
       toast = box;
+      placeToast();
       toastKind = kind;
       toastKey = key;
       toastTimer = setTimeout(() => ns.guard(SOURCE, () => {

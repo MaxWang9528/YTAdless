@@ -816,8 +816,9 @@ ignores `HTMLMediaElement.volume`, and Web Audio risks breaking background audio
 - `sponsorblock.js` skips each segment once per load, with an Undo toast. It never skips during
   `ad-showing`.
 - Settings › "Skip automatically" (off by default) picks the mode and travels as `autoSkip`. Off
-  means a "Sponsor · Skip" button appears when the playhead enters a segment, and nothing is
-  skipped without a tap.
+  means a "Sponsor · Skip" button appears 3 s before a segment starts, and nothing is skipped
+  without a tap. The toast is fixed on `<body>` over the player's corner. Inside `#movie_player`
+  it sat under mweb's control layer, and a tap opened the controls (device, 2026-11-25).
 - Every segment is drawn on YouTube's seek bar in SponsorBlock's colours. The seek bar's
   selectors are unverified on device. If none matches, a 3 px strip along the bottom of the
   player shows them instead, and the log says which one was used.

@@ -189,14 +189,17 @@ test('sponsorblock.js › suggestedSegments for another video › ignored: count
 test('sponsorblock.js › entering a suggested segment › shows "Possible sponsor" and does NOT seek', async (t) => {
   const { page, suggest, at, video, toast, intents } = await sbPage(t);
   await suggest([GUESS]);
-  at(60);
-  assert.equal(toast(), null, 'before it: no prompt');
+  at(57.9);
+  assert.equal(toast(), null, 'more than 3 s before it: no prompt');
+  at(58.2);
+  assert.ok(toast(), 'prompted 3 s early (CONFIG.PROMPT_LEAD_S)');
+  assert.equal(video.currentTime, 58.2);
   at(61.2);
   assert.equal(video.currentTime, 61.2, 'never skipped by itself');
   const box = toast();
   assert.ok(box, 'prompt shown');
   assert.equal(box.dataset.kind, 'suggest');
-  assert.equal(page.document.querySelector('#movie_player').contains(box), true, 'over the player');
+  assert.equal(box.parentNode, page.document.body, 'fixed on body, over the player');
   assert.match(box.querySelector('span').textContent, /^Possible sponsor$/);
   assert.equal(box.querySelector('button').textContent, 'Skip');
   at(70);
@@ -246,7 +249,7 @@ test('sponsorblock.js › leaving a suggested segment › the prompt hides', asy
   assertAll(page);
 });
 
-test('sponsorblock.js › suggestion prompt timeout › hides after ~8 s and stays hidden while inside', async (t) => {
+test('sponsorblock.js › suggestion prompt timeout › hides after ~11 s (3 s lead + 8 s) and stays hidden while inside', async (t) => {
   const { page, suggest, at, toast } = await sbPage(t);
   await suggest([GUESS]);
   at(62);
@@ -254,6 +257,8 @@ test('sponsorblock.js › suggestion prompt timeout › hides after ~8 s and sta
   await page.flush(4100);
   assert.ok(toast(), 'longer-lived than the 4 s skip toast');
   await page.flush(4100);
+  assert.ok(toast(), 'still there at ~8 s: the 3 s lead is added');
+  await page.flush(3100);
   assert.equal(toast(), null);
   at(70);
   assert.equal(toast(), null, 'shown once');

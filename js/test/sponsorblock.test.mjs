@@ -75,7 +75,9 @@ test('sponsorblock.js › entering a segment › seeks to its end, logs, shows a
   assert.equal(skips(page).length, 1);
   const toast = page.document.querySelector(TOAST);
   assert.ok(toast, 'toast shown');
-  assert.equal(page.document.querySelector('#movie_player').contains(toast), true, 'over the player');
+  // On <body>, fixed over the player: inside #movie_player it sat under mweb's control layer (device).
+  assert.equal(toast.parentNode, page.document.body, 'on body, above the control layer');
+  assert.equal(toast.style.position, 'fixed');
   assert.match(toast.textContent, /Skipped sponsor/);
   assertAll(page);
 });
