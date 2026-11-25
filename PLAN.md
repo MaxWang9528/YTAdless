@@ -93,7 +93,7 @@ YTadless/
 │   │   ├── Presentation/  P0 type, C state machine + mini-player geometry
 │   │   └── Rules/         P0 API stub, A compiler + validator
 │   ├── Sources/YTAssets/  resource target: YTAssets.swift (P0), manifest.json (P0),
-│   │   ├── scripts/       bridge.js P0 · debug.js, router.js B · hooks.js, player-ads.js, feed-ads.js A
+│   │   ├── scripts/       bridge.js P0 · debug.js, router.js (+ browse tab state) B · hooks.js, player-ads.js, feed-ads.js A
 │   │   │                  player-bridge.js P0→D · background.js, media-session.js D · layout.js C
 │   │   └── rules/         network.txt, cosmetic.txt A
 │   └── Tests/YTCoreTests/ one file per area: BridgeTests (P0), RoutingTests (B), RulesTests (A), …
@@ -647,6 +647,28 @@ Decision table (`Router.decide`):
 
 Opening a video does a full `load` of `VideoRequest.watchURL` in the player view (D15).
 `m.youtube.com` and `www.` links are normalized.
+
+**Tab state** (router.js, browse role only; its `TAB_STATE` table). mweb's bottom-nav tabs
+(Home, Subscriptions, You) are SPA pushes. Each one fetches a fresh first page from
+`/youtubei/v1/browse` with `{browseId}`, so returning to a tab used to show a new feed scrolled to
+the top. Our routing doesn't cause this: browse `leaves()` only for video URLs, and SPA pushes never
+reach the navigation delegate. router.js keeps each tab's first page in memory, keyed by
+browseId + `params`. The page the document loaded with comes from `ytInitialData`; later pages are
+stored already pruned, because router.js's fetch wrapper sits outside hooks.js's. When the user
+switches back to a tab within `CACHE_TTL_MS`, the stored page is served instead of the network.
+router.js then restores the tab's scroll position, scrolling down step by step so that mweb's
+continuation loads grow the feed, and a touch cancels it.
+
+- **Switch or refresh.** A browse request for the tab already on screen (pull-to-refresh, or a tap
+  on the active tab) always goes to the network and replaces the stored page. The tab on screen is
+  tracked from delivered pages and `navigation`, so the push and the fetch can arrive in either order.
+- **Never cached.** Continuations and non-tab pages such as channels.
+- **No persistence.** Storage is memory only; signed-in feeds never go to web storage.
+- **Transport.** This works only if browse goes over fetch, and the Debug log says which transport
+  the page uses.
+- **Why router.js.** It lives in router.js rather than in its own script because manifest.json and
+  its P0 test are frozen (§5.1).
+- **Tests.** `js/test/tab-state.test.mjs`.
 
 Other B work:
 
