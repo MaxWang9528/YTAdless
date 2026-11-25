@@ -1,16 +1,18 @@
 // sponsorblock.js — owner: Module D (PLAN.md §5.4 `sponsorSegments`, `captionTracks`, `suggestedSegments`; §6.4, §6.5).
 //
-// Skips SponsorBlock segments in the player's main video, shows on-device *guesses* without
-// skipping them, and hands native the caption tracks those guesses are made from. Native
+// Skips SponsorBlock segments in the player's main video (or offers a Skip button), shows
+// on-device *guesses* the same way, and hands native the caption tracks those guesses are made from. Native
 // (SponsorBlockService, on-device detection) does all network work; this file never fetches.
-//   handles  `sponsorSegments {videoId, segments: [{start, end, category}]}` → {ok: true, count}
+//   handles  `sponsorSegments {videoId, segments: [{start, end, category}], autoSkip}` → {ok: true, count}
 //            (invalid segments are dropped one by one; segments for another video than the page's
 //            are ignored, count 0). A re-send for the same video keeps what was already skipped.
-//            `suggestedSegments {videoId, segments: [{start, end, category}]}` → {ok: true, count}
-//            Same validation and video check. Suggestions are NEVER skipped by themselves: they
-//            are drawn striped (outlined, fainter) on the seek bar, and when the playhead enters one a "Possible
-//            sponsor" toast offers Skip (once per segment per load; seeking back before its start
-//            re-arms it). A suggestion overlapping a real segment is not drawn or prompted.
+//            `suggestedSegments {videoId, segments: [{start, end, category}], autoSkip}` → {ok: true, count}
+//            Same validation and video check. Suggestions are drawn striped (outlined, fainter)
+//            on the seek bar. A suggestion overlapping a real segment is not drawn, skipped or prompted.
+//            `autoSkip` (a boolean; missing = true for sponsorSegments, false for suggestions):
+//            true = skipped automatically with an Undo toast; false = when the playhead enters one,
+//            a toast offers Skip ("Sponsor" or "Possible sponsor"; once per segment per load,
+//            seeking back before its start re-arms it). Nothing with autoSkip false is skipped untapped.
 //            `captionTracks {}` → {videoId: string|null, tracks: [{baseUrl, languageCode, kind, name}]}
 //            for the page's current video, from the `playerResponse` event (per-video cache, so a
 //            prefetch of the next video doesn't replace it) or window.ytInitialPlayerResponse.
@@ -19,13 +21,13 @@
 //   listens  `videoElement` (player-bridge.js) for re-attachments; also looks the video up itself,
 //            because that event doesn't replay emissions from before this file's listener.
 //            `playerResponse` (hooks.js) for caption tracks.
-//   emits    `userIntent` {action:'seek', source:'page'} before the Undo seek and the suggestion
-//            Skip seek (real taps), and NOT before automatic skips: a userIntent makes
+//   emits    `userIntent` {action:'seek', source:'page'} before the Undo seek and the Skip-button
+//            seek (real taps), and NOT before automatic skips: a userIntent makes
 //            background.js treat a pause in the next ~1.5 s as intentional (D12), so a skip while
 //            locked could leave a system pause unresumed. An automatic skip isn't the user's intent.
 // Each segment is skipped at most once per load: seeking back into it plays it. A toast over the
 // player says what was skipped and offers Undo (seek back to the segment's start). One toast at a
-// time; an automatic-skip toast replaces a suggestion prompt, never the other way round.
+// time; an automatic-skip toast replaces a Skip prompt, never the other way round.
 // Markers: every segment is drawn as a coloured span on YouTube's seek bar (SponsorBlock's
 // colours), so you can see what will be skipped; suggestions are striped, fainter and carry
 // data-suggested="1". When no seek bar is found (its classes are unverified on device), a thin
@@ -70,14 +72,23 @@
     // least BAR_MIN_WIDTH_FRACTION of the player wide and at most BAR_MAX_HEIGHT_PX tall is the
     // visible track line (a slider's hit area is taller than its line). Found by geometry, so it
     // survives class renames; the log names what it picked, so a capture isn't needed to learn it.
+    // Searched in the whole player container, not just #movie_player: on device (screenshot
+    // 2026-11-25) the bar still wasn't found inside #movie_player; mweb draws its controls in a
+    // layer beside it (#player-control-container / ytm-custom-control). Only elements inside the
+    // player's box count, and faded-out ones (controls hidden: opacity 0) are skipped.
+    SEEK_BAR_ROOTS: ['#player-container-id', 'ytm-custom-control', '#player-control-container', '#movie_player'],
     SEEK_BAR_CANDIDATES: [
-      '#movie_player [role="slider"]',
-      '#movie_player [class*="progress" i]',
-      '#movie_player [class*="scrubber" i]',
-      '#movie_player [class*="timebar" i]',
+      '[role="slider"]',
+      '[class*="progress" i]',
+      '[class*="scrubber" i]',
+      '[class*="timebar" i]',
     ],
     BAR_MIN_WIDTH_FRACTION: 0.4,
     BAR_MAX_HEIGHT_PX: 40,
+    // Where the red bar sits in the player while no bar has been measured yet (insets as a
+    // fraction of the player's width). Screenshot 30452.jpg, 2026-11-25 (iPhone 15 Pro, portrait,
+    // 923 px player): the track runs from x≈62 to x≈845 (the knob at 30:39/30:39).
+    DEFAULT_BAR_INSETS: Object.freeze({ left: 0.067, right: 0.085 }),
     MARKERS_ID: 'ytadless-sponsorblock-markers',
     FALLBACK_STRIP_PX: 3,       // height of the strip along the player's bottom edge
     MARKER_OPACITY: '0.85',
@@ -128,14 +139,17 @@
   ns.guard(SOURCE, () => {
     let video = null;
     let videoId = null;        // the video the stored segments belong to
-    let segments = [];         // [{start, end, category, key}] sorted by start
-    const done = new Set();    // keys skipped (or undone) in this load: never skipped again
+    let segments = [];         // [{start, end, category, key, suggested: false}] sorted by start
+    let segmentsAuto = true;   // sponsorSegments' autoSkip
+    const done = new Set();    // keys skipped automatically (or undone) in this load: never skipped again
     let suggestVideoId = null; // the video the stored suggestions belong to
-    let suggestions = [];      // same shape as segments; never skipped automatically
-    const prompted = new Set();  // suggestion keys prompted in this load (seeking back before the start re-arms)
+    let suggestions = [];      // same shape as segments, suggested: true
+    let suggestionsAuto = false;  // suggestedSegments' autoSkip
+    const doneSuggested = new Set();  // like `done`, for suggestions (cleared with them)
+    const prompted = new Set();  // keys offered a Skip button in this load (seeking back before the start re-arms)
     let toast = null;
     let toastTimer = null;
-    let toastKind = '';        // 'skip' (automatic skip, Undo) | 'suggest' (prompt, Skip) | ''
+    let toastKind = '';        // 'skip' (automatic skip, Undo) | 'suggest' (Skip prompt) | ''
     let toastKey = '';         // the segment the toast is about
     let markers = null;        // {el, host, key, fallback}
     let markersCheckedAt = -Infinity;
@@ -221,11 +235,16 @@
     const inside = (segment, t, duration) => segment.start <= t && t < segment.end - CONFIG.END_EPSILON_S &&
       !(duration > 0 && segment.start >= duration - CONFIG.END_GUARD_S);
 
+    const doneSet = (segment) => (segment.suggested ? doneSuggested : done);
+    const byStart = (a, b) => a.start - b.start || a.end - b.end;
+
     function check() {
       const id = pageVideoId();
       const real = realSegments(id);
       const suggested = activeSuggestions(id);
-      if (real.length === 0 && suggested.length === 0) {
+      const auto = (segmentsAuto ? real : []).concat(suggestionsAuto ? suggested : []).sort(byStart);
+      const prompt = (segmentsAuto ? [] : real).concat(suggestionsAuto ? [] : suggested).sort(byStart);
+      if (auto.length === 0 && prompt.length === 0) {
         if (toastKind === 'suggest') hideToast();
         return;
       }
@@ -237,24 +256,27 @@
       const t = finiteOr(v.currentTime, null);
       if (t === null) return;
       const duration = finiteOr(v.duration, 0);
-      for (const segment of real) {
+      for (const segment of auto) {
         if (segment.start > t) break;
-        if (done.has(segment.key) || !inside(segment, t, duration)) continue;
+        if (doneSet(segment).has(segment.key) || !inside(segment, t, duration)) continue;
         skip(v, segment, t, duration);
         return;
       }
-      checkSuggestions(suggested, t, duration);
+      checkPrompts(prompt, t, duration);
     }
 
+    const label = (segment) => CONFIG.CATEGORY_LABELS[segment.category] || segment.category;
+    const capitalised = (text) => text.charAt(0).toUpperCase() + text.slice(1);
+
     function skip(v, segment, from, duration) {
-      done.add(segment.key);
+      doneSet(segment).add(segment.key);
       const to = duration > 0 ? Math.min(segment.end, duration) : segment.end;
       seek(v, to);
-      ns.log('info', SOURCE, 'skipped ' + segment.category + ' ' + from.toFixed(1) + ' → ' + to.toFixed(1) +
-        ' s (segment ' + segment.start + '–' + segment.end + ')');
+      ns.log('info', SOURCE, 'skipped ' + segment.category + (segment.suggested ? ' (AI guess)' : '') + ' ' +
+        from.toFixed(1) + ' → ' + to.toFixed(1) + ' s (segment ' + segment.start + '–' + segment.end + ')');
       showToast({
         kind: 'skip', key: segment.key, ms: CONFIG.TOAST_MS, button: 'Undo',
-        text: 'Skipped ' + (CONFIG.CATEGORY_LABELS[segment.category] || segment.category),
+        text: 'Skipped ' + (segment.suggested ? 'possible ' : '') + label(segment),
         onTap: () => undo(segment),
       });
     }
@@ -267,8 +289,8 @@
       ns.log('info', SOURCE, 'undo: back to ' + segment.start + ' s; ' + segment.category + ' stays un-skipped');
     }
 
-    // ── suggestions (prompted, never skipped by themselves) ──────────────────────────────────
-    function checkSuggestions(list, t, duration) {
+    // ── Skip prompts (autoSkip false: never skipped without a tap) ─────────────────────────
+    function checkPrompts(list, t, duration) {
       // Being before a prompted segment's start means the user seeked back: prompt it again.
       for (const s of list) if (t < s.start) prompted.delete(s.key);
       const here = list.find((s) => inside(s, t, duration)) || null;
@@ -276,16 +298,16 @@
       // An automatic-skip toast takes precedence; the prompt waits (unprompted) until it is gone.
       if (!here || prompted.has(here.key) || toastKind === 'skip') return;
       prompted.add(here.key);
-      ns.log('info', SOURCE, 'suggestion: possible ' + here.category + ' at ' + t.toFixed(1) + ' s (segment ' +
-        here.start + '–' + here.end + '); prompting, not skipping');
+      ns.log('info', SOURCE, (here.suggested ? 'suggestion: possible ' : 'prompt: ') + here.category + ' at ' +
+        t.toFixed(1) + ' s (segment ' + here.start + '–' + here.end + '); prompting, not skipping');
       showToast({
         kind: 'suggest', key: here.key, ms: CONFIG.SUGGEST_TOAST_MS, button: 'Skip',
-        text: 'Possible ' + (CONFIG.CATEGORY_LABELS[here.category] || here.category),
-        onTap: () => skipSuggestion(here),
+        text: here.suggested ? 'Possible ' + label(here) : capitalised(label(here)),
+        onTap: () => skipByTap(here),
       });
     }
 
-    function skipSuggestion(segment) {
+    function skipByTap(segment) {
       hideToast();
       const v = currentVideo();
       if (!v || finiteOr(v.readyState, 0) < CONFIG.HAVE_METADATA || adShowing()) return;
@@ -294,8 +316,9 @@
       const from = finiteOr(v.currentTime, 0);
       prompted.add(segment.key);
       seek(v, to, true);  // a real tap: userIntent, unlike automatic skips
-      ns.log('info', SOURCE, 'suggestion skipped by tap: ' + segment.category + ' ' + from.toFixed(1) + ' → ' +
-        to.toFixed(1) + ' s (segment ' + segment.start + '–' + segment.end + ')');
+      ns.log('info', SOURCE, (segment.suggested ? 'suggestion skipped by tap: ' : 'skipped by tap: ') +
+        segment.category + ' ' + from.toFixed(1) + ' → ' + to.toFixed(1) + ' s (segment ' + segment.start + '–' +
+        segment.end + ')');
     }
 
     // ── toast ───────────────────────────────────────────────────────────────────────────────
@@ -378,14 +401,25 @@
     }
 
     // The visible track line, by shape (see CONFIG.SEEK_BAR_CANDIDATES).
+    function hidden(el) {
+      try {
+        return typeof el.checkVisibility === 'function' &&
+          !el.checkVisibility({ opacityProperty: true, visibilityProperty: true });
+      } catch (_) { return false; }
+    }
+
     function findBarByShape(player) {
       const playerRect = player ? rectOf(player) : null;
       if (!playerRect || !(playerRect.width > 0)) return null;
       const seen = new Set();
       let best = null;
-      for (const selector of CONFIG.SEEK_BAR_CANDIDATES) {
+      const roots = [];
+      for (const rootSelector of CONFIG.SEEK_BAR_ROOTS) {
+        try { for (const root of document.querySelectorAll(rootSelector)) roots.push(root); } catch (_) { /* next */ }
+      }
+      for (const root of roots) for (const selector of CONFIG.SEEK_BAR_CANDIDATES) {
         let list = [];
-        try { list = document.querySelectorAll(selector); } catch (_) { continue; }
+        try { list = root.querySelectorAll(selector); } catch (_) { continue; }
         for (const el of list) {
           if (seen.has(el) || el.id === CONFIG.MARKERS_ID || el.closest('#' + CONFIG.MARKERS_ID) ||
               el.closest('#' + CONFIG.TOAST_ID)) continue;
@@ -393,6 +427,10 @@
           const r = rectOf(el);
           if (!r || !(r.height > 0) || r.height > CONFIG.BAR_MAX_HEIGHT_PX ||
               r.width < playerRect.width * CONFIG.BAR_MIN_WIDTH_FRACTION) continue;
+          // Inside the player's box (a little slack: the bar may sit on its bottom edge).
+          if (r.left < playerRect.left - 1 || r.right > playerRect.right + 1 ||
+              r.top < playerRect.top - 1 || r.bottom > playerRect.bottom + CONFIG.BAR_MAX_HEIGHT_PX) continue;
+          if (hidden(el)) continue;
           if (!best || r.height < best.rect.height || (r.height === best.rect.height && r.width > best.rect.width)) {
             best = { el, rect: r };
           }
@@ -406,7 +444,7 @@
       for (const selector of CONFIG.SEEK_BAR_SELECTORS) {
         try {
           const found = document.querySelector(selector);
-          if (found) return { el: found, selector };
+          if (found && !hidden(found)) return { el: found, selector };
         } catch (_) { /* invalid selector: try the next */ }
       }
       return findBarByShape(player);
@@ -466,7 +504,7 @@
         removeMarkers();
         return;
       }
-      const insets = bar ? null : barInsets;
+      const insets = bar ? null : (barInsets || CONFIG.DEFAULT_BAR_INSETS);
       const key = real.map((s) => s.key).join(',') + '/' + suggested.map((s) => s.key).join(',') + '@' + duration +
         (insets ? '|' + insets.left.toFixed(4) + ',' + insets.right.toFixed(4) : '');
       if (markers && markers.host === host && markers.key === key && markers.el.parentNode === host) return;
@@ -505,7 +543,7 @@
       markers = { el: box, host, key, fallback };
 
       const where = bar ? 'seek bar ' + bar.selector
-        : 'fallback strip (' + (insets ? 'aligned to the last seek bar' : 'no seek bar matched') + ')';
+        : 'fallback strip (' + (barInsets ? 'aligned to the last seek bar' : 'default bar position, no seek bar seen yet') + ')';
       if (where !== loggedMarkerHost) {
         loggedMarkerHost = where;
         ns.log('info', SOURCE, 'markers on ' + where);
@@ -591,7 +629,7 @@
     }
 
     // ── commands ────────────────────────────────────────────────────────────────────────────
-    function validSegments(list) {
+    function validSegments(list, suggested) {
       const out = [];
       if (!Array.isArray(list)) return out;
       for (const s of list) {
@@ -601,9 +639,9 @@
         if (typeof start !== 'number' || typeof end !== 'number' || !Number.isFinite(start) ||
             !Number.isFinite(end) || start < 0 || end <= start) continue;
         if (typeof category !== 'string' || category === '' || category.length > CONFIG.MAX_CATEGORY_CHARS) continue;
-        out.push({ start, end, category, key: start + '|' + end + '|' + category });
+        out.push({ start, end, category, key: start + '|' + end + '|' + category, suggested });
       }
-      out.sort((a, b) => a.start - b.start || a.end - b.end);
+      out.sort(byStart);
       return out;
     }
 
@@ -617,14 +655,22 @@
       return id;
     }
 
+    // The controls (and the bar) appear and fade without any media event, e.g. a tap while paused
+    // or at the end of a video: re-check the marker host on a timer as well.
+    setInterval(() => ns.guard(SOURCE, () => renderMarkers(false)), CONFIG.MARKER_CHECK_MS);
+
     ns.command('captionTracks', () => captionTracks());
 
     ns.command('suggestedSegments', (args) => {
       const id = currentId(args, 'suggestedSegments');
       if (id === null) return { ok: true, count: 0 };
-      if (id !== suggestVideoId) prompted.clear();
+      if (id !== suggestVideoId) {
+        prompted.clear();
+        doneSuggested.clear();
+      }
       suggestVideoId = id;
-      suggestions = validSegments(args.segments);
+      suggestions = validSegments(args.segments, true);
+      suggestionsAuto = typeof args.autoSkip === 'boolean' ? args.autoSkip : false;
       if (toastKind === 'suggest' && !suggestions.some((s) => s.key === toastKey)) hideToast();
       currentVideo();
       check();
@@ -637,10 +683,12 @@
       if (id === null) return { ok: true, count: 0 };
       if (id !== videoId) {
         done.clear();
+        for (const s of segments) prompted.delete(s.key);
         if (toastKind === 'skip') hideToast();
       }
       videoId = id;
-      segments = validSegments(args.segments);
+      segments = validSegments(args.segments, false);
+      segmentsAuto = typeof args.autoSkip === 'boolean' ? args.autoSkip : true;
       currentVideo();
       check();
       renderMarkers(true);

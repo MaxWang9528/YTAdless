@@ -260,9 +260,9 @@ Arguments always travel as a JSON string, never interpolated into source.
 | `audioInterruption` | `{phase:'began'\|'ended', shouldResume}` | background.js (D) | D |
 | `layout` | `{mode:'page'\|'video'}` | layout.js (C) | C |
 | `capture` | → `{url, title, html, originals[], counters, log[]}` | debug.js (B) | B Debug menu |
-| `sponsorSegments` | `{videoId, segments: [{start, end, category}]}` → `{ok: true, count}` | sponsorblock.js (D) | D, after each player `videoMeta` and on a settings change (added 2026-11-25, user-approved) |
+| `sponsorSegments` | `{videoId, segments: [{start, end, category}], autoSkip}` → `{ok: true, count}`; `autoSkip` false = Skip button instead of skipping (missing = true) | sponsorblock.js (D) | D, after each player `videoMeta` and on a settings change (added 2026-11-25, user-approved) |
 | `captionTracks` | — → `{videoId: string\|null, tracks: [{baseUrl, languageCode, kind, name}]}` (`baseUrl` absolute; `kind` is `'asr'` for auto-captions, else `''`) | sponsorblock.js (D) | D's on-device sponsor detection (added 2026-11-25, user-approved) |
-| `suggestedSegments` | `{videoId, segments: [{start, end, category}]}` → `{ok: true, count}`; shown, never auto-skipped | sponsorblock.js (D) | D's on-device sponsor detection (added 2026-11-25, user-approved) |
+| `suggestedSegments` | `{videoId, segments: [{start, end, category}], autoSkip}` → `{ok: true, count}`; shown with a Skip button, or skipped with Undo when `autoSkip` is true (missing = false; `autoSkip` on both added 2026-11-25, user-approved) | sponsorblock.js (D) | D's on-device sponsor detection (added 2026-11-25, user-approved) |
 
 ### 5.5 Swift contracts (Phase 0 writes every signature; owners fill in bodies)
 
@@ -815,9 +815,16 @@ ignores `HTMLMediaElement.volume`, and Web Audio risks breaking background audio
 - The service caches results per video and re-sends `sponsorSegments` after every load (D15).
 - `sponsorblock.js` skips each segment once per load, with an Undo toast. It never skips during
   `ad-showing`.
+- Settings › "Skip automatically" (off by default) picks the mode and travels as `autoSkip`. Off
+  means a "Sponsor · Skip" button appears when the playhead enters a segment, and nothing is
+  skipped without a tap.
 - Every segment is drawn on YouTube's seek bar in SponsorBlock's colours. The seek bar's
   selectors are unverified on device. If none matches, a 3 px strip along the bottom of the
   player shows them instead, and the log says which one was used.
+- The bar is also found by shape. The search covers the whole `#player-container-id`, because
+  mweb draws its controls beside `#movie_player`, and it skips faded-out bars. It re-runs every
+  second, even while paused. Until a bar has been measured, the strip uses the bar's position
+  from a device screenshot (left 6.7%, right 8.5%; 2026-11-25).
 
 **On-device sponsor detection** (off by default; Debug › Settings, under SponsorBlock).
 - It runs only when SponsorBlock is off, finds nothing, or fails for a video.
@@ -831,7 +838,8 @@ ignores `HTMLMediaElement.volume`, and Web Audio risks breaking background audio
     not used: its macro plugin is missing on Linux.
   - Answers are validated, snapped to cues and merged in YTCore.
 - The result is sent as `suggestedSegments`. These are striped marks with a "Possible sponsor ·
-  Skip" prompt, and they are never skipped automatically.
+  Skip" prompt. With its own "Skip automatically" setting on (off by default, `autoSkip`), they
+  are skipped like SponsorBlock segments, with Undo.
 - Results are cached per video. Failures, empty transcripts (a possible PO token requirement)
   and an unavailable model are not cached.
 - The Debug log shows one "AI: …" summary per video (source `SponsorAI`).

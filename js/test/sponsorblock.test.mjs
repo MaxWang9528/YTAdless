@@ -380,7 +380,7 @@ test('sponsorblock.js › markers › bar hidden later → the strip keeps the b
   assertAll(page);
 });
 
-test('sponsorblock.js › markers › nothing bar-shaped (too narrow or too tall) → full-width strip', async (t) => {
+test('sponsorblock.js › markers › nothing bar-shaped (too narrow or too tall) → strip at the default bar position', async (t) => {
   const { page, send } = await sbPage(t);
   const doc = page.document;
   const player = doc.querySelector('#movie_player');
@@ -395,7 +395,66 @@ test('sponsorblock.js › markers › nothing bar-shaped (too narrow or too tall
   await send([SPONSOR]);
   const box = page.document.querySelector(MARKERS);
   assert.equal(box.parentNode, player);
-  assert.equal(box.style.left, '0px');
-  assert.equal(box.style.right, '0px');
+  // No bar measured yet: CONFIG.DEFAULT_BAR_INSETS (device screenshot 30452.jpg, 2026-11-25).
+  assert.equal(parseFloat(box.style.left), 6.7);
+  assert.equal(parseFloat(box.style.right), 8.5);
+  assert.ok(page.posted('log').some((m) => m.source === 'sponsorblock.js' &&
+    /fallback strip \(default bar position, no seek bar seen yet\)/.test(m.message)));
+  assertAll(page);
+});
+
+// ── markers: the bar lives beside #movie_player (device screenshot 30452.jpg, 2026-11-25) ───────
+// mweb draws its controls in a layer next to #movie_player inside #player-container-id.
+function controlLayerBar(page) {
+  const doc = page.document;
+  const player = doc.querySelector('#movie_player');
+  const container = doc.createElement('div');
+  container.id = 'player-container-id';
+  player.parentNode.insertBefore(container, player);
+  container.appendChild(player);
+  rect(container, { left: 0, top: 0, width: 400, height: 225 });
+  rect(player, { left: 0, top: 0, width: 400, height: 225 });
+  const controls = doc.createElement('ytm-custom-control');
+  const line = doc.createElement('div');
+  line.className = 'ytmChapteredProgressBarLine';
+  rect(line, { left: 27, top: 200, width: 340, height: 3 });
+  controls.appendChild(line);
+  container.appendChild(controls);
+  return { container, player, controls, line };
+}
+
+test('sponsorblock.js › markers › bar in the control layer beside #movie_player › found by shape', async (t) => {
+  const { page, send } = await sbPage(t);
+  const { line } = controlLayerBar(page);
+  await send([SPONSOR]);
+  assert.equal(page.document.querySelector(MARKERS).parentNode, line);
+  assertAll(page);
+});
+
+test('sponsorblock.js › markers › faded-out bar (controls hidden) › skipped; strip uses its insets', async (t) => {
+  const { page, send, at, clock } = await sbPage(t);
+  const { line, player } = controlLayerBar(page);
+  await send([SPONSOR]);
+  assert.equal(page.document.querySelector(MARKERS).parentNode, line);
+  line.checkVisibility = () => false;  // opacity 0 while the controls are hidden
+  clock.advance(1100);
+  at(1);
+  const box = page.document.querySelector(MARKERS);
+  assert.equal(box.parentNode, player);
+  assert.equal(parseFloat(box.style.left), 6.75);  // 27 / 400
+  assert.equal(parseFloat(box.style.right), 8.25); // (400 - 367) / 400
+  assertAll(page);
+});
+
+test('sponsorblock.js › markers › controls appear while paused (no media events) › moved onto the bar by the timer', async (t) => {
+  const { page, send, clock } = await sbPage(t);
+  const { line } = controlLayerBar(page);
+  line.checkVisibility = () => false;
+  await send([SPONSOR]);
+  assert.equal(page.document.querySelector(MARKERS).parentNode.id, 'movie_player');
+  line.checkVisibility = () => true;  // tap: controls shown; the video is paused, so no timeupdate
+  clock.advance(1100);
+  await new Promise((resolve) => setTimeout(resolve, 1200));
+  assert.equal(page.document.querySelector(MARKERS).parentNode, line);
   assertAll(page);
 });
