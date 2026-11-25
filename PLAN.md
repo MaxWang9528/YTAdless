@@ -261,7 +261,7 @@ Arguments always travel as a JSON string, never interpolated into source.
 | `layout` | `{mode:'page'\|'video'}` | layout.js (C) | C |
 | `capture` | → `{url, title, html, originals[], counters, log[]}` | debug.js (B) | B Debug menu |
 | `sponsorSegments` | `{videoId, segments: [{start, end, category}], autoSkip}` → `{ok: true, count}`; `autoSkip` false = Skip button instead of skipping (missing = true) | sponsorblock.js (D) | D, after each player `videoMeta` and on a settings change (added 2026-11-25, user-approved) |
-| `captionTracks` | — → `{videoId: string\|null, tracks: [{baseUrl, languageCode, kind, name}]}` (`baseUrl` absolute; `kind` is `'asr'` for auto-captions, else `''`) | sponsorblock.js (D) | D's on-device sponsor detection (added 2026-11-25, user-approved) |
+| `captionTracks` | — → `{videoId: string\|null, tracks: [{baseUrl, languageCode, kind, name}], client: {clientVersion, signatureTimestamp}\|null}` (`baseUrl` absolute; `kind` is `'asr'` for auto-captions, else `''`; `client` is the page's ytcfg `INNERTUBE_CLIENT_VERSION`/`STS` for D's `/youtubei/v1/player` fallback, added 2026-11-25, **pending user approval**) | sponsorblock.js (D) | D's on-device sponsor detection (added 2026-11-25, user-approved) |
 | `suggestedSegments` | `{videoId, segments: [{start, end, category}], autoSkip}` → `{ok: true, count}`; shown with a Skip button, or skipped with Undo when `autoSkip` is true (missing = false; `autoSkip` on both added 2026-11-25, user-approved) | sponsorblock.js (D) | D's on-device sponsor detection (added 2026-11-25, user-approved) |
 
 ### 5.5 Swift contracts (Phase 0 writes every signature; owners fill in bodies)
@@ -832,6 +832,13 @@ ignores `HTMLMediaElement.volume`, and Web Audio risks breaking background audio
 - `SponsorDetectionService` (Media/) sends `captionTracks` and picks an English track
   (`YTCore/SponsorDetection` `Captions`: manual first, then auto-captions). It fetches the signed
   `baseUrl` with `fmt=json3` straight away (anonymous URLSession) and parses it into cues.
+- Watch-page caption URLs carry `exp=xpo,xwmhp,xpe`: without a PO token timedtext answers
+  HTTP 200 with 0 bytes (verified 2026-11-25; this was the "no transcript" bug). For those, or
+  when the page's track comes back empty, native POSTs an anonymous MWEB `/youtubei/v1/player`
+  (page's ytcfg `INNERTUBE_CLIENT_VERSION` + `STS` from the `captionTracks` reply's `client`, a
+  built-in pair otherwise) and uses its tracks, which have no `exp` and serve json3
+  (`YTCore/SponsorDetection/InnertubeCaptions.swift`). If both fail, one log line names each
+  failed step ("AI: no transcript — page track needs a PO token (exp=xpe); /player …").
 - The cues are cut into windows of about 6,000 characters with 20 s of overlap. A keyword
   prefilter (about 45 commented regexes) passes only windows that look like ad reads.
 - `SponsorDetector` sends each passing window to Apple's on-device model (FoundationModels).
@@ -841,8 +848,8 @@ ignores `HTMLMediaElement.volume`, and Web Audio risks breaking background audio
 - The result is sent as `suggestedSegments`. These are striped marks with a "Possible sponsor ·
   Skip" prompt. With its own "Skip automatically" setting on (off by default, `autoSkip`), they
   are skipped like SponsorBlock segments, with Undo.
-- Results are cached per video. Failures, empty transcripts (a possible PO token requirement)
-  and an unavailable model are not cached.
+- Results are cached per video. Failures, no transcript from either source and an
+  unavailable model are not cached.
 - The Debug log shows one "AI: …" summary per video (source `SponsorAI`).
 
 ## 7. Testing strategy (details and commands in CLAUDE.md)

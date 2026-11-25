@@ -1,7 +1,9 @@
 // Captions — owner: Module D (PLAN.md §6.5 on-device sponsor detection; `captionTracks`, §5.4).
 //
 // Pure pieces that turn the page's caption tracks into timed text the model can read:
-//   1. decode the `captionTracks` reply (`{videoId, tracks: [{baseUrl, languageCode, kind, name}]}`);
+//   1. decode the `captionTracks` reply (`{videoId, tracks: [{baseUrl, languageCode, kind, name}],
+//      client?: {clientVersion, signatureTimestamp} | null}`; `client` added 2026-11-25, see
+//      InnertubeCaptions.swift for why);
 //   2. choose a track (v1: English only; a manual track beats auto-generated `asr`);
 //   3. build the json3 URL (`baseUrl` with `fmt=json3`, checked anonymous HTTP 200 on 2026-11-25);
 //   4. parse json3 into sorted, non-empty cues.
@@ -36,10 +38,13 @@ public enum Captions {
     public struct CaptionTracksReply: Equatable, Sendable {
         public var videoId: String?
         public var tracks: [CaptionTrack]
+        /// The page's MWEB client values (for a /player request), when the page has them.
+        public var client: InnertubeClient?
 
-        public init(videoId: String?, tracks: [CaptionTrack]) {
+        public init(videoId: String?, tracks: [CaptionTrack], client: InnertubeClient? = nil) {
             self.videoId = videoId
             self.tracks = tracks
+            self.client = client
         }
     }
 
@@ -48,7 +53,8 @@ public enum Captions {
     }
 
     /// Decodes the reply JSON. A track without a string `baseUrl` or `languageCode` is dropped;
-    /// a missing `kind`/`name` reads as "". A reply that isn't an object throws.
+    /// a missing `kind`/`name` reads as "". A missing or malformed `client` reads as nil. A reply
+    /// that isn't an object throws.
     public static func captionTracks(fromJSON json: String) throws -> CaptionTracksReply {
         guard let object = try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any]
         else { throw DecodeError.malformed }
@@ -62,7 +68,12 @@ public enum Captions {
             return CaptionTrack(baseUrl: baseUrl, languageCode: languageCode,
                                 kind: t["kind"] as? String ?? "", name: t["name"] as? String ?? "")
         }
-        return CaptionTracksReply(videoId: videoId, tracks: tracks)
+        var client: InnertubeClient?
+        if let c = object["client"] as? [String: Any], let version = c["clientVersion"] as? String,
+           InnertubeClient.isValidVersion(version), let sts = c["signatureTimestamp"] as? Int, sts > 0 {
+            client = InnertubeClient(clientVersion: version, signatureTimestamp: sts)
+        }
+        return CaptionTracksReply(videoId: videoId, tracks: tracks, client: client)
     }
 
     public enum TrackChoice: Equatable, Sendable {
