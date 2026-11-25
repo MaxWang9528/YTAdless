@@ -26,6 +26,8 @@ final class MediaCoordinator {
     private let hub: BridgeEventHub
     /// The sleep timer (the expanded header's moon button); AppServices is frozen, so it lives here.
     let sleepTimer: SleepTimerController
+    /// What was last sent for skipping (Debug › Segments).
+    let segments = SegmentBoard()
 
     private var started = false
     private var observers: [NSObjectProtocol] = []
@@ -61,10 +63,12 @@ final class MediaCoordinator {
         // SponsorBlock (off by default): fetches segments natively, sponsorblock.js skips them.
         let debugLog = (player as? WebViewStore)?.debugLog
         sponsorBlock = SponsorBlockService(session: session, player: player, hub: hub, log: debugLog)
+        sponsorBlock?.board = segments
         sponsorBlock?.start()
         // On-device sponsor guesses (off by default), only when SponsorBlock has nothing.
         sponsorDetection = SponsorDetectionService(session: session, player: player, hub: hub,
                                                    sponsorBlock: sponsorBlock, log: debugLog)
+        sponsorDetection?.board = segments
         sponsorDetection?.start()
     }
 

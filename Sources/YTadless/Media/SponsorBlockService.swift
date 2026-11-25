@@ -179,7 +179,11 @@ final class SponsorBlockService {
         }
     }
 
+    /// Debug › Segments shows what was last sent (set by MediaCoordinator).
+    var board: SegmentBoard?
+
     private func send(videoId: String, segments: [SkipSegment]) {
+        board?.sentSponsorBlock(videoId: videoId, segments: segments)
         let command = JSCommand.sponsorSegments(videoId: videoId, segments: segments)
         Task { [player, log] in
             do {

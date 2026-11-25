@@ -240,7 +240,11 @@ final class SponsorDetectionService {
         return Outcome(segments: outcome.report.segments, cacheable: outcome.report.failed == 0)
     }
 
+    /// Debug › Segments shows what was last sent (set by MediaCoordinator).
+    var board: SegmentBoard?
+
     private func send(videoId: String, segments: [SkipSegment]) {
+        board?.sentSuggestions(videoId: videoId, segments: segments)
         let command = JSCommand.suggestedSegments(videoId: videoId, segments: segments)
         Task { [player, log] in
             do {
