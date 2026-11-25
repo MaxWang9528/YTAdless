@@ -297,22 +297,33 @@ public struct PlayerLayout: Equatable, Sendable {
 }
 
 public enum PresentationLayout {
+    /// The browse view starts below the status bar / Dynamic Island. m.youtube.com sets
+    /// `viewport-fit=cover` but its top bar has no `env(safe-area-inset-top)` padding (mweb only
+    /// runs in Safari, whose own chrome covers that strip), so a full-screen webview puts the
+    /// logo and search button under the island (device, 2026-11-25). The bottom stays full: the
+    /// bottom nav pads itself with `env(safe-area-inset-bottom)` (see `bottomNavHeight`).
+    public static func browseFrame(in viewport: PresentationViewport) -> PlanarRect {
+        let top = viewport.safeArea.top
+        return PlanarRect(x: 0, y: top, width: viewport.size.x, height: max(0, viewport.size.y - top))
+    }
+
     public static func layout(for presentation: PlayerPresentation, in viewport: PresentationViewport, tuning: PresentationTuning = .standard) -> PlayerLayout {
         let full = viewport.bounds
         let size = viewport.size
+        let browse = browseFrame(in: viewport)
         switch presentation {
         case .hidden:
             // Off-screen below the window, still in the hierarchy (D2). Full size, so opening
             // slides it up without a reflow.
             return PlayerLayout(
                 player: PlanarRect(origin: PlanarVector(0, size.y), size: size), playerScale: 1, playerCornerRadius: 0,
-                browse: full, chrome: .none, chromeFrame: nil, pageLayout: .page,
+                browse: browse, chrome: .none, chromeFrame: nil, pageLayout: .page,
                 isPlayerVisible: false, isBrowseInteractive: true, hidesStatusBar: false)
 
         case .expanded where viewport.isLandscape:
             return PlayerLayout(
                 player: full, playerScale: 1, playerCornerRadius: 0,
-                browse: full, chrome: .none, chromeFrame: nil, pageLayout: .video,
+                browse: browse, chrome: .none, chromeFrame: nil, pageLayout: .video,
                 isPlayerVisible: true, isBrowseInteractive: false, hidesStatusBar: true)
 
         case .expanded:
@@ -320,7 +331,7 @@ public enum PresentationLayout {
             let player = PlanarRect(x: 0, y: header.maxY, width: size.x, height: max(0, size.y - header.maxY))
             return PlayerLayout(
                 player: player, playerScale: 1, playerCornerRadius: 0,
-                browse: full, chrome: .header, chromeFrame: header, pageLayout: .page,
+                browse: browse, chrome: .header, chromeFrame: header, pageLayout: .page,
                 isPlayerVisible: true, isBrowseInteractive: false, hidesStatusBar: false)
 
         case .docked, .mini:
@@ -330,7 +341,7 @@ public enum PresentationLayout {
             return PlayerLayout(
                 player: PlanarRect(origin: frame.origin, size: video),
                 playerScale: scale, playerCornerRadius: scale > 0 ? tuning.miniCornerRadius / scale : 0,
-                browse: full, chrome: .miniPlayer, chromeFrame: frame, pageLayout: .video,
+                browse: browse, chrome: .miniPlayer, chromeFrame: frame, pageLayout: .video,
                 isPlayerVisible: true, isBrowseInteractive: true, hidesStatusBar: false)
         }
     }

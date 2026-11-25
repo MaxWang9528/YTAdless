@@ -175,6 +175,16 @@ struct PresentationLayoutTests {
         #expect(layout.hidesStatusBar)
     }
 
+    @Test("browse: starts below the top safe area (Dynamic Island), runs to the bottom edge")
+    func browseBelowStatusBar() {
+        let frame = PresentationLayout.browseFrame(in: portrait)
+        #expect(frame == PlanarRect(x: 0, y: 59, width: 393, height: 852 - 59))
+        #expect(PresentationLayout.browseFrame(in: landscape) == landscape.bounds)
+        for mode in [PlayerPresentation.hidden, .expanded] + miniModes {
+            #expect(PresentationLayout.layout(for: mode, in: portrait).browse == frame, "\(mode)")
+        }
+    }
+
     @Test("mini player: the scaled video fills the floating frame; browse stays interactive", arguments: miniModes)
     func miniPlayer(mode: PlayerPresentation) {
         for viewport in [portrait, landscape] {
@@ -184,7 +194,7 @@ struct PresentationLayoutTests {
             #expect(layout.chromeFrame == mini)
             #expect(layout.pageLayout == .video)
             #expect(layout.isBrowseInteractive)
-            #expect(layout.browse == viewport.bounds)
+            #expect(layout.browse == PresentationLayout.browseFrame(in: viewport))
             let visual = layout.playerVisualFrame
             #expect(visual.origin == mini.origin)
             #expect(approx(visual.width, mini.width, 0.01))
