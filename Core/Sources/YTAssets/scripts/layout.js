@@ -53,6 +53,15 @@
     WATCH_HIDE: ['ytm-header', 'ytm-mobile-topbar-renderer', 'ytm-pivot-bar-renderer'],
     WATCH_PLAYER: '.player-container',
     WATCH_APP: 'ytm-app',
+    // mweb lays some rows out under its fixed player with `position: sticky; top: <header + video>`
+    // (device, 2026-11-24: "a bar in the middle of the screen" once the video scrolls away; the
+    // rules are in the external c3 CSS, not in our captures, so no selector is known). Any element
+    // in ytm-app that is sticky with a top offset is un-stuck with this class; each one is logged
+    // once so its selector can be pinned here later. Fixed elements are only logged.
+    UNSTICK_CLASS: 'ytadless-unstuck',
+    UNSTICK_MIN_TOP: 1,
+    UNSTICK_SCAN_MS: 400,
+    UNSTICK_MAX_NODES: 6000,
   });
 
   const ns = window.__ytadless;
@@ -85,6 +94,7 @@
       `${CONFIG.WATCH_HIDE.map(watch).join(',\n')} { display: none !important; }`,
       `${watch(CONFIG.WATCH_PLAYER)} { position: ${CONFIG.WATCH_PLAYER_POSITION} !important; top: 0 !important; }`,
       `${watch(CONFIG.WATCH_APP)} { padding-top: 0 !important; padding-bottom: 0 !important; }`,
+      `${watch('.' + CONFIG.UNSTICK_CLASS)} { position: static !important; top: auto !important; }`,
     ].join('\n');
 
     let mode = 'page';
@@ -138,7 +148,55 @@
       return { ok: true, mode };
     });
 
-    ns.on('navigation', () => apply());
+    // MARK: un-stick rows that were laid out under the fixed player
+
+    const reported = new Set();
+    const describe = (el) => el.localName + (el.id ? `#${el.id}` : '')
+      + [...el.classList].filter((c) => c !== CONFIG.UNSTICK_CLASS).slice(0, 3).map((c) => `.${c}`).join('');
+
+    function unstick() {
+      if (mode !== 'page' || typeof window.getComputedStyle !== 'function') return;
+      const app = document.querySelector(CONFIG.WATCH_APP);
+      if (!app) return;
+      const nodes = app.getElementsByTagName('*');
+      const count = Math.min(nodes.length, CONFIG.UNSTICK_MAX_NODES);
+      for (let i = 0; i < count; i++) {
+        const el = nodes[i];
+        if (el.classList.contains(CONFIG.UNSTICK_CLASS)) continue;
+        const style = window.getComputedStyle(el);
+        const position = style.position;
+        if (position !== 'sticky' && position !== '-webkit-sticky' && position !== 'fixed') continue;
+        if (style.display === 'none') continue;
+        const top = parseFloat(style.top);
+        const name = describe(el);
+        if (position === 'fixed') {
+          if (!reported.has('fixed ' + name)) { reported.add('fixed ' + name); ns.log('debug', SOURCE, 'fixed in watch view', name, `top=${style.top}`); }
+          continue;
+        }
+        if (!(top >= CONFIG.UNSTICK_MIN_TOP)) continue;
+        el.classList.add(CONFIG.UNSTICK_CLASS);
+        if (!reported.has(name)) { reported.add(name); ns.log('info', SOURCE, 'unstuck', name, `top=${style.top}`); }
+      }
+    }
+
+    let scanTimer = null;
+    function scheduleUnstick() {
+      if (scanTimer !== null) return;
+      scanTimer = setTimeout(() => ns.guard(SOURCE, () => { scanTimer = null; unstick(); }), CONFIG.UNSTICK_SCAN_MS);
+    }
+
+    window.addEventListener('scroll', () => ns.guard(SOURCE, scheduleUnstick), { passive: true });
+    if (typeof MutationObserver === 'function') {
+      const observeApp = () => {
+        const app = document.querySelector(CONFIG.WATCH_APP);
+        if (!app) return false;
+        new MutationObserver(() => ns.guard(SOURCE, scheduleUnstick)).observe(app, { childList: true, subtree: true });
+        return true;
+      };
+      if (!observeApp()) document.addEventListener('DOMContentLoaded', () => ns.guard(SOURCE, observeApp), { once: true });
+    }
+
+    ns.on('navigation', () => { apply(); scheduleUnstick(); });
 
     // YouTube sets attributes on <html> (dark theme, …); put our class back if one write drops it.
     if (root() && typeof MutationObserver === 'function') {
@@ -149,5 +207,6 @@
     const saved = load();
     if (saved) mode = saved;
     apply();
+    scheduleUnstick();
   });
 })();

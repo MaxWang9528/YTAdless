@@ -150,6 +150,8 @@ test(`layout.js › ${FIXTURE} › every stylesheet selector is valid and matche
   assert.ok(sheet.cssRules.length >= 6);
   for (const rule of sheet.cssRules) {
     for (const selector of rule.selectorText.split(',').map((s) => s.trim())) {
+      // Added at runtime to rows mweb makes sticky (tested below); the fixture has none.
+      if (selector.includes('ytadless-unstuck')) continue;
       let matches;
       assert.doesNotThrow(() => { matches = page.document.querySelectorAll(selector); }, selector);
       assert.ok(matches.length > 0, `${selector} matches the hydrated fixture`);
@@ -238,4 +240,31 @@ test('layout.js › all scripts › works alongside every other player script', 
   assert.equal(isVideo(page), true);
   assertClean(page, 'all scripts');
   assertAllMatchVectors(page);
+});
+
+test(`layout.js › ${FIXTURE} › un-sticks rows mweb laid out under its fixed player, leaves the rest`, async (t) => {
+  const page = await layoutPage(t);
+  const { document, window } = page;
+  const app = document.querySelector('ytm-app');
+  // mweb-style: a chip row stuck just below the (formerly fixed) 16:9 video.
+  const style = document.createElement('style');
+  style.textContent = '.test-stuck-row { position: sticky; top: 221px; } .test-top-row { position: sticky; top: 0px; }'
+    + ' .test-fixed { position: fixed; top: 300px; }';
+  document.head.appendChild(style);
+  app.insertAdjacentHTML('beforeend', '<div class="test-stuck-row"></div><div class="test-top-row"></div><div class="test-fixed"></div>');
+  window.dispatchEvent(new window.Event('scroll'));
+  await new Promise((resolve) => setTimeout(resolve, 500));
+  const css = (selector) => window.getComputedStyle(document.querySelector(selector));
+  assert.equal(css('.test-stuck-row').position, 'static', 'the stuck row scrolls with the page');
+  assert.equal(css('.test-top-row').position, 'sticky', 'a row stuck at top 0 is left alone');
+  assert.equal(css('.test-fixed').position, 'fixed', 'fixed elements (panels, dialogs) are only logged');
+  assert.ok(page.messages.some((m) => m.type === 'log' && String(m.message ?? JSON.stringify(m)).includes('unstuck')), 'logged once');
+
+  // Video mode (mini player, landscape) doesn't scan.
+  await page.cmd('layout', { mode: 'video' });
+  app.insertAdjacentHTML('beforeend', '<div class="test-stuck-row" id="later"></div>');
+  window.dispatchEvent(new window.Event('scroll'));
+  await new Promise((resolve) => setTimeout(resolve, 500));
+  assert.equal(document.getElementById('later').classList.contains('ytadless-unstuck'), false);
+  assertClean(page, 'unstick');
 });
