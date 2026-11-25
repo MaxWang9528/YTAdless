@@ -1,12 +1,16 @@
 // VideoSwipeDown — owner: Module C (PLAN.md §6.3).
 //
 // Swipe down on the video itself to minimize, like the YouTube app. SwiftUI gestures can't see
-// touches that land in the player WKWebView, so this is a UIKit pan recognizer added once to the
-// webview (never re-parented, D2). It only begins in the expanded view, for a mostly-downward drag
+// touches that land in the player WKWebView, so this is a UIKit pan recognizer. It sits on the
+// webview's *superview* (SwiftUI's host for WebViewContainer, which D2 keeps fixed): WebKit defers
+// every recognizer on the webview or inside it until the page's touch handlers have run, and the
+// YouTube player handles touches on the video, so a recognizer on the webview itself never began
+// (device, 2026-11-24). It only begins in the expanded view, for a mostly-downward drag
 // that starts on the video (the top 16:9 band of the watch page, where layout.js pins the player).
 // Drags lower down still scroll the page; horizontal drags still reach the seek bar.
 
 import UIKit
+import YTCore
 
 @MainActor
 final class VideoSwipeDown: NSObject, UIGestureRecognizerDelegate {
@@ -15,8 +19,10 @@ final class VideoSwipeDown: NSObject, UIGestureRecognizerDelegate {
     var onChanged: (CGSize) -> Void = { _ in }
     var onEnded: (CGSize, CGSize) -> Void = { _, _ in }
     var onCancelled: () -> Void = {}
+    var log: (LogLevel, String) -> Void = { _, _ in }
 
     private weak var webView: UIView?
+    private weak var host: UIView?
     private var scrollPan: UIPanGestureRecognizer?
     private lazy var pan: UIPanGestureRecognizer = {
         let pan = UIPanGestureRecognizer(target: self, action: #selector(handle(_:)))
@@ -29,11 +35,21 @@ final class VideoSwipeDown: NSObject, UIGestureRecognizerDelegate {
     /// Down must beat sideways by this much, so scrubbing and horizontal swipes stay with the page.
     private static let verticalDominance: CGFloat = 1.5
 
-    func install(on webView: UIView, scrollPan: UIPanGestureRecognizer?) {
-        guard self.webView == nil else { return }
+    /// Adds the recognizer to the webview's superview once SwiftUI has hosted it.
+    func install(on webView: UIView, scrollPan: UIPanGestureRecognizer?) async {
+        guard host == nil else { return }
         self.webView = webView
         self.scrollPan = scrollPan
-        webView.addGestureRecognizer(pan)
+        for _ in 0..<50 {
+            if let superview = webView.superview {
+                host = superview
+                superview.addGestureRecognizer(pan)
+                log(.info, "video swipe installed on \(type(of: superview))")
+                return
+            }
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+        log(.error, "video swipe not installed: the player webview has no superview")
     }
 
     @objc private func handle(_ pan: UIPanGestureRecognizer) {
@@ -43,6 +59,7 @@ final class VideoSwipeDown: NSObject, UIGestureRecognizerDelegate {
         case .began:
             // Stop the page from bouncing along with the player.
             if let scrollPan { scrollPan.isEnabled = false; scrollPan.isEnabled = true }
+            log(.debug, "video swipe began")
             onChanged(CGSize(width: t.x, height: t.y))
         case .changed:
             onChanged(CGSize(width: t.x, height: t.y))
@@ -57,12 +74,14 @@ final class VideoSwipeDown: NSObject, UIGestureRecognizerDelegate {
     }
 
     func gestureRecognizerShouldBegin(_ recognizer: UIGestureRecognizer) -> Bool {
-        guard recognizer === pan, isActive, let view = recognizer.view else { return false }
+        guard recognizer === pan, isActive, let view = webView else { return false }
         let start = pan.location(in: view)
         let videoHeight = view.bounds.width * 9 / 16
         guard start.y >= 0, start.y <= videoHeight else { return false }
         let v = pan.velocity(in: view)
-        return v.y > 0 && v.y > Self.verticalDominance * abs(v.x)
+        let begins = v.y > 0 && v.y > Self.verticalDominance * abs(v.x)
+        if !begins { log(.debug, "video swipe skipped: velocity \(Int(v.x)),\(Int(v.y))") }
+        return begins
     }
 
     // WebKit's own recognizers keep running until ours begins; then the scroll pan is cancelled.

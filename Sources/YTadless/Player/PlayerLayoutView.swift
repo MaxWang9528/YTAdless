@@ -56,7 +56,9 @@ struct PlayerLayoutView: View {
         .onChange(of: session.playback.meta?.videoId) { layoutSync.resend(store: store) }
         .task {
             layoutSync.attach(store: store)
-            videoSwipe.install(on: store.playerWebView, scrollPan: store.playerWebView.scrollView.panGestureRecognizer)
+            let log = store.debugLog
+            videoSwipe.log = { level, message in log.native(level, "VideoSwipeDown", message) }
+            await videoSwipe.install(on: store.playerWebView, scrollPan: store.playerWebView.scrollView.panGestureRecognizer)
         }
     }
 
