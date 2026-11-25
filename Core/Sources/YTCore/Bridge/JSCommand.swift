@@ -30,6 +30,14 @@ public enum JSCommand: Equatable, Sendable {
     /// The segments sponsorblock.js skips in video `videoId`. Empty = skip nothing (SponsorBlock
     /// off, or no segments). Native re-sends it after every player load (D15).
     case sponsorSegments(videoId: String, segments: [SkipSegment])
+    /// Asks sponsorblock.js for the current video's caption tracks (from its playerResponse) →
+    /// `{videoId, tracks: [{baseUrl, languageCode, kind, name}]}`; `baseUrl` is absolute.
+    /// Added 2026-11-25 with the user's approval (on-device sponsor detection).
+    case captionTracks
+    /// Segments that on-device detection *guesses* are sponsor reads in `videoId`. sponsorblock.js
+    /// shows them (dashed marks, a Skip button) but never skips them by itself. Empty = none.
+    /// Added 2026-11-25 with the user's approval.
+    case suggestedSegments(videoId: String, segments: [SkipSegment])
 
     /// The function body passed to `callAsyncJavaScript`. It reads the two named arguments
     /// `name` and `args`; it never contains data.
@@ -50,6 +58,8 @@ public enum JSCommand: Equatable, Sendable {
         case .layout: "layout"
         case .capture: "capture"
         case .sponsorSegments: "sponsorSegments"
+        case .captionTracks: "captionTracks"
+        case .suggestedSegments: "suggestedSegments"
         }
     }
 
@@ -57,7 +67,7 @@ public enum JSCommand: Equatable, Sendable {
     public var argumentsJSON: String {
         let object: [String: Any]
         switch self {
-        case .play, .pause, .state, .capture: object = [:]
+        case .play, .pause, .state, .capture, .captionTracks: object = [:]
         case .seek(let to): object = ["to": Self.finite(to)]
         case .seekBy(let delta): object = ["delta": Self.finite(delta)]
         case .pip(let enter): object = ["enter": enter]
@@ -65,7 +75,7 @@ public enum JSCommand: Equatable, Sendable {
         case .audioInterruption(let began, let shouldResume):
             object = ["phase": began ? "began" : "ended", "shouldResume": shouldResume]
         case .layout(let mode): object = ["mode": mode.rawValue]
-        case .sponsorSegments(let videoId, let segments):
+        case .sponsorSegments(let videoId, let segments), .suggestedSegments(let videoId, let segments):
             object = [
                 "videoId": videoId,
                 "segments": segments.map {

@@ -261,6 +261,8 @@ Arguments always travel as a JSON string, never interpolated into source.
 | `layout` | `{mode:'page'\|'video'}` | layout.js (C) | C |
 | `capture` | → `{url, title, html, originals[], counters, log[]}` | debug.js (B) | B Debug menu |
 | `sponsorSegments` | `{videoId, segments: [{start, end, category}]}` → `{ok: true, count}` | sponsorblock.js (D) | D, after each player `videoMeta` and on a settings change (added 2026-11-25, user-approved) |
+| `captionTracks` | — → `{videoId: string\|null, tracks: [{baseUrl, languageCode, kind, name}]}` (`baseUrl` absolute; `kind` is `'asr'` for auto-captions, else `''`) | sponsorblock.js (D) | D's on-device sponsor detection (added 2026-11-25, user-approved) |
+| `suggestedSegments` | `{videoId, segments: [{start, end, category}]}` → `{ok: true, count}`; shown, never auto-skipped | sponsorblock.js (D) | D's on-device sponsor detection (added 2026-11-25, user-approved) |
 
 ### 5.5 Swift contracts (Phase 0 writes every signature; owners fill in bodies)
 

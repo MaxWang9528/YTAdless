@@ -344,6 +344,10 @@
       return out;
     }
 
+    // Contract stubs (2026-11-25); filled in by the on-device detection work.
+    ns.command('captionTracks', () => ({ videoId: pageVideoId(), tracks: [] }));
+    ns.command('suggestedSegments', (args) => ({ ok: true, count: Array.isArray(args.segments) ? args.segments.length : 0 }));
+
     ns.command('sponsorSegments', (args) => {
       const id = typeof args.videoId === 'string' && CONFIG.QUERY_ID.test(args.videoId) ? args.videoId : null;
       if (id === null || id !== pageVideoId()) {

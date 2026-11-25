@@ -148,6 +148,8 @@ struct JSCommandTests {
         .play, .pause, .seek(to: 42.5), .seekBy(-10), .pip(enter: true), .state,
         .lifecycle(.background), .audioInterruption(began: false, shouldResume: true), .layout(.video), .capture,
         .sponsorSegments(videoId: "dQw4w9WgXcQ", segments: [SkipSegment(start: 10, end: 30.5, category: "sponsor")]),
+        .captionTracks,
+        .suggestedSegments(videoId: "dQw4w9WgXcQ", segments: [SkipSegment(start: 61, end: 95, category: "sponsor")]),
     ]
 
     @Test("names and arguments match TestVectors/commands.json")
