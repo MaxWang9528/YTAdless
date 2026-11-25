@@ -22,6 +22,8 @@ final class MediaCoordinator {
     private let session: PlayerSession
     private let player: any PlayerControlling
     private let hub: BridgeEventHub
+    /// The sleep timer (the expanded header's moon button); AppServices is frozen, so it lives here.
+    let sleepTimer: SleepTimerController
 
     private var started = false
     private var observers: [NSObjectProtocol] = []
@@ -36,6 +38,7 @@ final class MediaCoordinator {
         self.session = session
         self.player = player
         self.hub = hub
+        sleepTimer = SleepTimerController(session: session, hub: hub)
     }
 
     /// Called once by AppServices after everything is wired.
@@ -48,6 +51,8 @@ final class MediaCoordinator {
         subscription = hub.subscribe { [weak self] event in
             self?.handle(event)
         }
+        sleepTimer.send = { [weak self] command in self?.enqueue(command, keepAliveInBackground: true) }
+        sleepTimer.start()
     }
 
     // MARK: Audio session

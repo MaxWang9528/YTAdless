@@ -122,7 +122,8 @@ struct PlayerLayoutView: View {
             playback: session.playback,
             onGesture: { gesture in perform(gesture, in: viewport) },
             onPlayPause: togglePlayback,
-            onPiP: startPiP
+            onPiP: startPiP,
+            sleepTimer: AppServices.shared.media.sleepTimer
         )
         switch layout.chrome {
         case .none:

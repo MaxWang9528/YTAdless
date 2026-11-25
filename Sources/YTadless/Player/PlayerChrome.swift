@@ -1,7 +1,8 @@
 // Native player chrome — owner: Module C (PLAN.md §6.3).
 //
 // Styled after the YouTube app (user decision, 2026-11-24):
-// - Expanded: a slim strip above the watch view with the collapse chevron, a grabber and PiP.
+// - Expanded: a slim strip above the watch view with the collapse chevron, a grabber, the sleep
+//   timer (moon; its countdown next to it when armed) and PiP.
 //   Drag it, or the video itself (VideoSwipeDown), down — or tap the chevron — to minimize.
 //   YouTube's own controls do the rest.
 // - Mini player: a small floating video in the bottom-right corner, above the site's bottom nav.
@@ -19,6 +20,7 @@ struct PlayerChromeActions {
     let onGesture: (PresentationGesture) -> Void
     let onPlayPause: () -> Void
     let onPiP: () -> Void
+    let sleepTimer: SleepTimerController
 
     var isPlaying: Bool { playback.snapshot.status.isPlayingOrWaiting }
     var isInPiP: Bool { playback.presentation == .pip }
@@ -36,6 +38,7 @@ struct ExpandedHeader: View {
             HStack(spacing: 0) {
                 ChromeButton(systemName: "chevron.down", label: "Minimize player") { actions.onGesture(.collapseButton) }
                 Spacer(minLength: 0)
+                SleepTimerMenu(controller: actions.sleepTimer)
                 ChromeButton(systemName: actions.isInPiP ? "pip.exit" : "pip.enter",
                              label: "Picture in Picture", action: actions.onPiP)
             }
@@ -44,6 +47,57 @@ struct ExpandedHeader: View {
         .background(Color(uiColor: .systemBackground))
         .contentShape(Rectangle())
         .accessibilityHint("Drag down to minimize")
+    }
+}
+
+/// The moon button: a menu of durations, end of video and (when armed) turn off. When armed, the
+/// time left is shown next to it; `Text(timerInterval:)` counts down without re-rendering.
+private struct SleepTimerMenu: View {
+    let controller: SleepTimerController
+
+    var body: some View {
+        let timer = controller.timer
+        Menu {
+            Section("Sleep timer") {
+                ForEach(SleepTimer.presetMinutes, id: \.self) { minutes in
+                    Button("\(minutes) minutes") { controller.arm(.minutes(minutes)) }
+                }
+                Button("End of video") { controller.arm(.endOfVideo) }
+                    .disabled(!controller.canArmEndOfVideo)
+                if timer.isArmed {
+                    Button("Turn off", role: .destructive) { controller.disarm() }
+                }
+            }
+        } label: {
+            HStack(spacing: 3) {
+                Image(systemName: timer.isArmed ? "moon.zzz.fill" : "moon.zzz")
+                    .font(.title3)
+                switch timer.mode {
+                case .until(let deadline, let armedAt):
+                    // armedAt ≤ deadline always holds; a range built from `.now` could trap once it passed.
+                    Text(timerInterval: armedAt...deadline, countsDown: true)
+                        .font(.caption.monospacedDigit())
+                case .endOfVideo:
+                    Text("End").font(.caption)
+                case .off:
+                    EmptyView()
+                }
+            }
+            .frame(minWidth: 44, minHeight: 44)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.primary)
+        .accessibilityLabel("Sleep timer")
+        .accessibilityValue(accessibilityValue(timer.mode))
+    }
+
+    private func accessibilityValue(_ mode: SleepTimer.Mode) -> String {
+        switch mode {
+        case .off: "Off"
+        case .until(let deadline, _): "Pauses at \(deadline.formatted(date: .omitted, time: .shortened))"
+        case .endOfVideo: "Pauses at the end of the video"
+        }
     }
 }
 
