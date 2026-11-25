@@ -791,6 +791,29 @@ Fallback, only if spike S-D1 shows WebKit doesn't surface Media Session in Contr
 `Media/NowPlayingController` using `MPNowPlayingInfoCenter` + `MPRemoteCommandCenter`, fed from
 `PlaybackState` and sending `JSCommand`s.
 
+### 6.5 Sleep timer and SponsorBlock (Module D, added 2026-11-25)
+
+**Sleep timer.** The moon menu in the expanded header (`PlayerChrome.swift`) arms
+`SleepTimerController` (Media/), which MediaCoordinator owns because AppServices is frozen. The
+decisions are the pure `SleepTimer` (YTCore/Playback, tested). Modes are N minutes or end of video.
+It fires the existing `pause` command (native intent, so background.js never resumes it; see
+`js/test/sleep-timer-pause.test.mjs`). Checks run from a deadline task, on every player
+`playback`/`videoMeta` message, and on foreground. End of video fires on `ended`, and for 60 s
+afterwards it pauses the first different video that starts (mweb autoplay). A video the user
+opens from browse (a new request id) disarms it instead. There is no volume fade: iOS WebKit
+ignores `HTMLMediaElement.volume`, and Web Audio risks breaking background audio and PiP.
+
+**SponsorBlock** (off by default; Debug › Settings › SponsorBlock).
+- `SponsorBlockService` (Media/) runs on every player `videoMeta`. It sends only a 4-hex
+  sha256(videoId) prefix (CryptoKit, app target) to `sponsor.ajay.app/api/skipSegments/<prefix>`,
+  over an ephemeral session.
+- `YTCore/SponsorBlock` builds the URL and parses the response, with tests against
+  `TestVectors/sponsorblock/`. It keeps only this video's `skip` segments in enabled categories
+  and merges overlaps. A 404 means none.
+- The service caches results per video and re-sends `sponsorSegments` after every load (D15).
+- `sponsorblock.js` skips each segment once per load, with an Undo toast. It never skips during
+  `ad-showing`.
+
 ## 7. Testing strategy (details and commands in CLAUDE.md)
 
 | tier | runs where | covers |
