@@ -534,7 +534,9 @@ at launch:
 3. If the lookup misses, it compiles the list and removes stale identifiers.
 4. If compiling fails, it falls back to the last good identifier and logs the error (D10).
 
-The list is applied to both webviews before the first page load. Starting network rules:
+The app compiles network.txt and cosmetic.txt as **two lists** (each with its own last good
+identifier) so Debug › Settings can switch them separately; both are applied to both webviews
+before the first page load. Starting network rules:
 `||doubleclick.net^`, `||googlesyndication.com^`, `||googleadservices.com^`,
 `||youtube.com/pagead/`, `||youtube.com/api/stats/ads`, `||youtube.com/ptracking`,
 `||youtube.com/youtubei/v1/player/ad_break`, `||youtube.com/get_midroll_`.
@@ -655,14 +657,24 @@ Other B work:
   calls the JS `capture` command and writes a timestamped folder to Documents. The Phase 0
   Info.plist enables `UIFileSharingEnabled` and `LSSupportsOpeningDocumentsInPlace`, so captures
   appear in Files and in the Windows Apple Devices app's file sharing.
+- **Settings** (Debug panel › Settings tab; `Debug/AppSettings.swift` + `SettingsView.swift`,
+  UserDefaults `ytadless.settings.*`, Reset to defaults). Each setting does something real:
+  appearance (Dark default / Light / System → window `overrideUserInterfaceStyle`); mini player
+  size, corner radius, margin, progress line and drag distance (`PlayerPreferences.tuning` in
+  YTCore, clamped and tested, fed to every `PresentationLayout`/`next(after:)` call in
+  PlayerLayoutView; defaults = `PresentationTuning.standard`); swipe down on the video to minimize
+  (gates `VideoSwipeDown.isActive`); Block ad requests / Hide ad elements (add or remove the
+  network / cosmetic rule list on both webviews; open pages need a reload, offered in the UI;
+  JSON pruning in the scripts is unaffected); keep the screen awake while playing
+  (`isIdleTimerDisabled`); reload either page; reset the Debug button position.
 
 ### 6.3 Player UI (Module C)
 
 `PlayerLayoutView` lays out both webviews. Each one lives in a single persistent container that is
 **never removed or re-parented** (D2); mode changes only animate frame, offset and scale.
 
-**UI follows the YouTube app (user decisions, 2026-11-24):** dark mode always (Info.plist
-`UIUserInterfaceStyle`), an app-like expanded watch view, and a floating mini player in the
+**UI follows the YouTube app (user decisions, 2026-11-24):** dark mode by default (Debug ›
+Settings › Appearance sets every window's `overrideUserInterfaceStyle`; no Info.plist key), an app-like expanded watch view, and a floating mini player in the
 bottom-right corner above m.youtube.com's own bottom nav (the site's nav is kept; no native tab
 bar). The frozen `PlayerPresentation` enum still has `docked` and four mini corners; all of them
 render as that mini player, and C only produces `PlayerPresentation.miniPlayer` (= `.mini(.bottomTrailing)`).

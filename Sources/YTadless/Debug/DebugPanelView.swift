@@ -2,7 +2,7 @@
 //
 // The Debug sheet: the log (filter by origin and minimum level, newest first, selectable text),
 // filterHit counters and status, and actions: Capture (→ Files › YTadless › captures), Copy log,
-// Clear, reload either webview.
+// Clear, reload either webview. The Settings tab is SettingsView (AppSettings).
 
 import SwiftUI
 import UIKit
@@ -13,7 +13,7 @@ struct DebugPanelView: View {
     let session: PlayerSession
     let log: DebugLog
 
-    enum Tab: String, CaseIterable { case log = "Log", counters = "Counters" }
+    enum Tab: String, CaseIterable { case log = "Log", counters = "Counters", settings = "Settings" }
     enum OriginFilter: String, CaseIterable { case all = "All", browse = "Browse", player = "Player", native = "Native" }
 
     @Environment(\.dismiss) private var dismiss
@@ -46,6 +46,7 @@ struct DebugPanelView: View {
                 switch tab {
                 case .log: logList
                 case .counters: countersList
+                case .settings: SettingsView(store: store)
                 }
             }
             .navigationTitle("Debug")

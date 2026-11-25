@@ -37,6 +37,8 @@ final class WebViewStore: PlayerControlling {
     private var foregroundObserver: NSObjectProtocol?
     private var titleObservation: NSKeyValueObservation?
 
+    /// The compiled content-rule lists (empty until loaded); `applyContentRules` installs them.
+    private(set) var contentRuleLists = ContentRuleLoader.Lists()
     private var rulesReady = false
     private var pendingUntilRulesReady: [@MainActor () -> Void] = []
     private var lastOpen: (request: VideoRequest, date: Date)?
@@ -78,12 +80,8 @@ final class WebViewStore: PlayerControlling {
         }
         Task { [weak self] in
             guard let self else { return }
-            let list = await ContentRuleLoader(log: debugLog).load()
-            if let list {
-                for role in WebRole.allCases {
-                    webView(for: role).configuration.userContentController.add(list)
-                }
-            }
+            contentRuleLists = await ContentRuleLoader(log: debugLog).load()
+            applyContentRules(AppSettings.shared)
             markRulesReady()
         }
         Task { [weak self] in
@@ -244,6 +242,23 @@ final class WebViewStore: PlayerControlling {
                 debugLog.native(.debug, "WebViewStore", "state (\(reason)) failed: \(error)")
             }
         }
+    }
+
+    // MARK: Content rules (Debug › Settings toggles them)
+
+    /// Adds the lists the settings enable to both webviews and removes the others. WebKit uses the
+    /// change for new requests; the current page keeps what it already loaded until a reload.
+    func applyContentRules(_ settings: AppSettings) {
+        let enabled = [
+            settings.blockAdRequests ? contentRuleLists.network : nil,
+            settings.hideAdElements ? contentRuleLists.cosmetic : nil,
+        ].compactMap { $0 }
+        for role in WebRole.allCases {
+            let controller = webView(for: role).configuration.userContentController
+            controller.removeAllContentRuleLists()
+            for list in enabled { controller.add(list) }
+        }
+        debugLog.native(.info, "ContentRules", "applied: block requests \(settings.blockAdRequests ? "on" : "off"), hide elements \(settings.hideAdElements ? "on" : "off") (\(enabled.count) list(s))")
     }
 
     // MARK: Content-rule gate

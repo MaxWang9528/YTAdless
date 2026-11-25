@@ -14,9 +14,8 @@
 	<true/>
 	<key>LSSupportsOpeningDocumentsInPlace</key>
 	<true/>
-	<!-- Dark mode always (user decision, 2026-11-24). WKWebView then reports prefers-color-scheme: dark. -->
-	<key>UIUserInterfaceStyle</key>
-	<string>Dark</string>
+	<!-- No UIUserInterfaceStyle: Debug › Settings › Appearance (default Dark) sets each window's
+	     overrideUserInterfaceStyle (AppSettings.swift); WKWebView's prefers-color-scheme follows. -->
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
