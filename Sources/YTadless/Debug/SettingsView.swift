@@ -81,6 +81,18 @@ struct SettingsView: View {
                 Text("Skips segments the SponsorBlock community marked (sponsor.ajay.app), with an Undo button. To look a video up, only the first 4 characters of a SHA-256 hash of its ID are sent, never the ID itself. The data is crowd-sourced and can be wrong.")
             }
 
+            Section {
+                Toggle("Detect sponsors with on-device AI", isOn: $settings.aiSponsorDetection)
+                let status = SponsorDetector.status
+                if !status.isAvailable {
+                    Label(status.message, systemImage: "exclamationmark.triangle")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            } footer: {
+                Text("Runs only when SponsorBlock is off or has no segments for a video. The video's transcript is analysed on this iPhone with Apple Intelligence and never leaves the phone. Guesses are shown as dashed marks on the seek bar with a Skip button, and are never skipped automatically.")
+            }
+
             Section("Pages") {
                 Button("Reload browse", systemImage: "arrow.clockwise") { store.browseWebView.reload() }
                 Button("Reload player", systemImage: "arrow.clockwise") { store.playerWebView.reload() }
