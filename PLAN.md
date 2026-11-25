@@ -670,7 +670,7 @@ render as that mini player, and C only produces `PlayerPresentation.miniPlayer` 
 | mode | player | browse |
 |---|---|---|
 | hidden | off-screen; the WKWebView stays in the hierarchy | full screen |
-| expanded | under a slim native header (chevron, grabber, PiP); watch view with the video pinned at the top (`layout: page`) | behind |
+| expanded | under a slim native header (chevron, grabber, PiP); watch view with the video at the top of the page, scrolling away with it (`layout: page`) | behind |
 | mini player (`docked`, `mini(*)`) | the full-width 16:9 player scaled to half the screen's short side (so the page doesn't reflow), floating bottom-right above the site's bottom nav with rounded corners and a shadow; close, play/pause and a progress line on the video; `layout: video` | full screen |
 
 Expanded in landscape becomes a full-screen video (`layout: video`); the landscape orientations
@@ -680,9 +680,14 @@ the mini player or drag it up to expand; drag it down or fling it sideways to `c
 In expanded mode, YouTube's own controls are used; PiP is in the native header.
 
 `layout.js` adds a class plus a stylesheet on `<html>`. Always (player view): the app-like watch
-view hides the site's top bar and bottom nav and pins the player at `top: 0`, using the same
-offsets as YouTube's own `header-in-player` variant. In `video` mode it also hides everything else
-and pins the player container to the viewport.
+view hides the site's top bar and bottom nav and places the player at `top: 0`, using the same
+offsets as YouTube's own `header-in-player` variant. It also un-pins the player: mweb makes
+`.player-container.sticky-player` `position: fixed`, and the watch view turns it back into mweb's
+non-sticky `position: absolute`, so the video scrolls away with the page like normal content
+(YouTube's in-flow 16:9 placeholder in `ytm-app` keeps reserving its space). Swiping down on the
+video to minimize (`VideoSwipeDown`) only begins on the video's current on-screen band, so once
+it has scrolled away a downward drag scrolls the page. In `video` mode it also hides everything
+else and pins the player container to the viewport (an ID selector, so it outranks the watch view).
 
 Pure parts go in `YTCore/Presentation`: the transition rules (`next(after: gesture)`) and the
 mini player geometry (frame, scale, velocity projection, progress). They are tested there.

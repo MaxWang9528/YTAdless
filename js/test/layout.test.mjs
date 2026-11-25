@@ -46,20 +46,54 @@ test(`layout.js › ${FIXTURE} › starts in page layout with the app-like watch
   assertClean(page, 'load');
 });
 
-test(`layout.js › ${FIXTURE} › the watch view hides the site's top bar and bottom nav and pins the player at the top`, async (t) => {
+test(`layout.js › ${FIXTURE} › the watch view hides the site's top bar and bottom nav and puts the player at the top`, async (t) => {
   const page = await layoutPage(t);
   const css = styles(page)[0].textContent;
   for (const selector of ['ytm-header', 'ytm-mobile-topbar-renderer', 'ytm-pivot-bar-renderer']) {
     assert.ok(page.document.querySelector(`html.${WATCH_CLASS} ${selector}`), `${selector} is targeted and present`);
     assert.match(css, new RegExp(`html\\.${WATCH_CLASS} ${selector}[^{]*\\{[^}]*display: none`));
   }
-  assert.match(css, new RegExp(`html\\.${WATCH_CLASS} \\.player-container \\{ top: 0`));
+  assert.match(css, new RegExp(`html\\.${WATCH_CLASS} \\.player-container \\{ position: absolute !important; top: 0`));
   assert.match(css, new RegExp(`html\\.${WATCH_CLASS} ytm-app \\{ padding-top: 0`));
   // Kept in both page layouts.
   await page.cmd('layout', { mode: 'video' });
   await page.cmd('layout', { mode: 'page' });
   assert.equal(isWatchView(page), true);
   assertClean(page, 'watch view');
+});
+
+// mweb's own rules for the player (inline CSS of the 2026-11-24 watch capture); the skeleton
+// fixture has its <style> elements removed.
+const MWEB_PLAYER_CSS = '.player-container{position:absolute;top:48px;left:0;right:0;overflow:hidden;z-index:2}'
+  + '.player-container.sticky-player{position:fixed;top:48px;left:0;right:0;overflow:hidden;z-index:2}'
+  + 'ytm-app.sticky-player{display:block;padding-top:48px}';
+
+test(`layout.js › ${FIXTURE} › the watch view un-pins the sticky player so it scrolls away with the page`, async (t) => {
+  const page = await layoutPage(t);
+  const { document, window } = page;
+  const mweb = document.createElement('style');
+  mweb.textContent = MWEB_PLAYER_CSS;
+  document.head.insertBefore(mweb, document.head.firstChild);
+  const css = (selector) => window.getComputedStyle(document.querySelector(selector));
+  assert.ok(document.querySelector('#player-container-id').classList.contains('sticky-player'));
+
+  // page: out of flow at the document top (over YouTube's placeholder), not fixed to the viewport.
+  assert.equal(css('#player-container-id').position, 'absolute');
+  assert.equal(css('#player-container-id').top, '0px');
+  assert.equal(css('ytm-app').paddingTop, '0px');
+  assert.ok(document.querySelector('ytm-app > .player-placeholder-wrapper > .player-size'),
+    'the page still reserves the video space, so absolute leaves no gap and no overlap');
+
+  // video (mini player, landscape): still pinned full-viewport, the watch class notwithstanding.
+  await page.cmd('layout', { mode: 'video' });
+  assert.equal(isWatchView(page), true);
+  assert.equal(css('#player-container-id').position, 'fixed');
+  assert.equal(css('#player-container-id').height, '100%');
+
+  await page.cmd('layout', { mode: 'page' });
+  assert.equal(css('#player-container-id').position, 'absolute');
+  assert.equal(css('#player-container-id').top, '0px');
+  assertClean(page, 'un-pinned');
 });
 
 test(`layout.js › ${FIXTURE} › video adds the class and one stylesheet; page removes the class`, async (t) => {
@@ -85,7 +119,7 @@ test(`layout.js › ${FIXTURE} › video hides the app and chrome and pins the p
   const { document, window } = page;
   const css = (selector) => window.getComputedStyle(document.querySelector(selector));
   assert.notEqual(css('ytm-app').visibility, 'hidden');
-  assert.notEqual(css('#player-container-id').position, 'fixed');
+  assert.equal(css('#player-container-id').position, 'absolute');
 
   await page.cmd('layout', { mode: 'video' });
   assert.equal(css('ytm-app').visibility, 'hidden');
@@ -105,7 +139,7 @@ test(`layout.js › ${FIXTURE} › video hides the app and chrome and pins the p
   assert.equal(css('video').objectFit, 'contain');
 
   await page.cmd('layout', { mode: 'page' });
-  assert.notEqual(css('#player-container-id').position, 'fixed');
+  assert.equal(css('#player-container-id').position, 'absolute');
   assert.notEqual(css('ytm-app').visibility, 'hidden');
 });
 

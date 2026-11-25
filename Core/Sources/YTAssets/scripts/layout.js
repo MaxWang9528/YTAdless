@@ -9,9 +9,10 @@
 // is kept in sessionStorage and re-applied on load; native re-sends it after each load too.
 // Re-applied on `navigation` (router.js) and when YouTube rewrites <html class>.
 //
-// Always on in the player view (an app-like watch view, user decision 2026-11-24): the site's top
-// bar and bottom nav are hidden, and the video is pinned to the top with the page scrolling
-// under it, like the YouTube app. The native header above the webview takes the top bar's place.
+// Always on in the player view (an app-like watch view, user decisions 2026-11-24): the site's top
+// bar and bottom nav are hidden, and the video sits at the top of the page and scrolls away with
+// it like normal page content (mweb pins it `fixed`). The native header above the webview takes
+// the top bar's place.
 (() => {
   'use strict';
 
@@ -42,6 +43,12 @@
     // (mweb inline CSS, watch page 2026-11-24): `.player-container.sticky-player.header-in-player{top:0}`,
     // `ytm-app.sticky-player.header-in-player{padding-top:0}`; the defaults are `top:48px` and
     // `ytm-app{padding-top:48px}`, `[has-pivot-bar=true] ytm-app{padding-bottom:48px}`.
+    // Un-pinned: `.player-container.sticky-player{position:fixed;top:48px;…;z-index:2}` becomes
+    // mweb's own non-sticky default `.player-container{position:absolute;top:48px;…}` (same CSS)
+    // with top 0, so the video scrolls away with the page. Absolute, not static/relative: the page
+    // already reserves the video's space with `ytm-app > .player-placeholder-wrapper > .player-size`
+    // (fixture dom/2026-11-24-watch-skeleton-dQw4w9WgXcQ.html), so in-flow would add a second gap.
+    WATCH_PLAYER_POSITION: 'absolute',
     WATCH_CLASS: 'ytadless-watch-view',
     WATCH_HIDE: ['ytm-header', 'ytm-mobile-topbar-renderer', 'ytm-pivot-bar-renderer'],
     WATCH_PLAYER: '.player-container',
@@ -56,6 +63,8 @@
     const scoped = (selector) => `html.${CONFIG.ROOT_CLASS} ${selector}`;
     const list = (selectors) => selectors.map(scoped).join(',\n');
 
+    // `video` mode's `html.<ROOT_CLASS> #player-container-id` (an ID) outranks the watch view's
+    // `html.<WATCH_CLASS> .player-container`, so the mini player stays fixed full-viewport.
     const CSS = [
       `html.${CONFIG.ROOT_CLASS}, ${scoped('body')} { overflow: hidden !important; background: #000 !important; }`,
       `${scoped(CONFIG.APP)} { visibility: hidden !important; pointer-events: none !important; }`,
@@ -74,7 +83,7 @@
     const watch = (selector) => `html.${CONFIG.WATCH_CLASS} ${selector}`;
     const WATCH_CSS = [
       `${CONFIG.WATCH_HIDE.map(watch).join(',\n')} { display: none !important; }`,
-      `${watch(CONFIG.WATCH_PLAYER)} { top: 0 !important; }`,
+      `${watch(CONFIG.WATCH_PLAYER)} { position: ${CONFIG.WATCH_PLAYER_POSITION} !important; top: 0 !important; }`,
       `${watch(CONFIG.WATCH_APP)} { padding-top: 0 !important; padding-bottom: 0 !important; }`,
     ].join('\n');
 

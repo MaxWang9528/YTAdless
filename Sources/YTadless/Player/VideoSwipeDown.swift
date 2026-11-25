@@ -6,8 +6,13 @@
 // every recognizer on the webview or inside it until the page's touch handlers have run, and the
 // YouTube player handles touches on the video, so a recognizer on the webview itself never began
 // (device, 2026-11-24). It only begins in the expanded view, for a mostly-downward drag
-// that starts on the video (the top 16:9 band of the watch page, where layout.js pins the player).
-// Drags lower down still scroll the page; horizontal drags still reach the seek bar.
+// that starts on the video where it is on screen *now*. layout.js puts the player at the top of
+// the watch page and lets it scroll away with the page, so the video is the document band
+// y 0…(16:9 height). The touch is located in the webview's scroll view, whose bounds origin is the
+// content offset, so that band is tested in document coordinates: once the page is scrolled, the
+// top of the webview is page content and a downward drag there scrolls the page, and with the
+// video scrolled fully off it never begins. Drags lower down still scroll (or bounce) the page;
+// horizontal drags still reach the seek bar.
 
 import UIKit
 import YTCore
@@ -75,7 +80,9 @@ final class VideoSwipeDown: NSObject, UIGestureRecognizerDelegate {
 
     func gestureRecognizerShouldBegin(_ recognizer: UIGestureRecognizer) -> Bool {
         guard recognizer === pan, isActive, let view = webView else { return false }
-        let start = pan.location(in: view)
+        // Document coordinates (scroll view bounds origin = contentOffset); the webview itself as
+        // a fallback, which treats the page as unscrolled.
+        let start = pan.location(in: scrollPan?.view as? UIScrollView ?? view)
         let videoHeight = view.bounds.width * 9 / 16
         guard start.y >= 0, start.y <= videoHeight else { return false }
         let v = pan.velocity(in: view)
