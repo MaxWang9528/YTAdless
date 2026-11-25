@@ -28,6 +28,10 @@ struct PlayerLayoutView: View {
         self.session = session
     }
 
+    /// Mini-player size, corners, margin, progress line and drag distance from Debug › Settings
+    /// (`PresentationTuning.standard` by default). Reading it in `body` makes changes live.
+    private var tuning: PresentationTuning { AppSettings.shared.tuning }
+
     /// `request == nil` means nothing is loaded, whatever `presentation` says.
     private var presentation: PlayerPresentation {
         session.request == nil ? .hidden : session.presentation
@@ -36,14 +40,14 @@ struct PlayerLayoutView: View {
     var body: some View {
         GeometryReader { proxy in
             let viewport = Self.viewport(proxy)
-            let layout = PresentationLayout.layout(for: presentation, in: viewport)
+            let layout = PresentationLayout.layout(for: presentation, in: viewport, tuning: tuning)
             content(layout: layout, viewport: viewport)
                 .ignoresSafeArea()
                 .onChange(of: layout.pageLayout, initial: true) { _, pageLayout in
                     layoutSync.request(pageLayout, store: store)
                 }
-                .onChange(of: layout.chrome, initial: true) { _, chrome in
-                    videoSwipe.isActive = chrome == .header
+                .onChange(of: layout.chrome == .header && AppSettings.shared.videoSwipeToMinimize, initial: true) { _, active in
+                    videoSwipe.isActive = active
                 }
                 .onChange(of: viewport, initial: true) { _, viewport in
                     connectVideoSwipe(viewport: viewport)
@@ -67,7 +71,7 @@ struct PlayerLayoutView: View {
         let live = liveOffset(for: layout)
         let isMini = layout.chrome == .miniPlayer
         let bar = layout.chromeFrame ?? PlanarRect(x: 0, y: 0, width: 0, height: 0)
-        let miniRadius = PresentationTuning.standard.miniCornerRadius
+        let miniRadius = tuning.miniCornerRadius
         // WebKit fullscreen (the page's own fullscreen button) covers everything; hide ours.
         let showsChrome = session.playback.presentation != .fullscreen
         ZStack(alignment: .topLeading) {
@@ -133,8 +137,8 @@ struct PlayerLayoutView: View {
             MiniPlayerOverlay(
                 actions: actions,
                 progress: MiniPlayerGeometry.progress(position: snapshot.position, duration: snapshot.duration ?? session.playback.meta?.lengthSeconds),
-                progressHeight: PresentationTuning.standard.progressHeight,
-                cornerRadius: PresentationTuning.standard.miniCornerRadius
+                progressHeight: tuning.progressHeight,
+                cornerRadius: tuning.miniCornerRadius
             )
             .frame(width: frame.width, height: frame.height)
             .offset(x: frame.minX + live.width, y: frame.minY + live.height)
@@ -179,7 +183,7 @@ struct PlayerLayoutView: View {
     }
 
     private func perform(_ gesture: PresentationGesture, in viewport: PresentationViewport) {
-        let outcome = presentation.next(after: gesture, in: viewport)
+        let outcome = presentation.next(after: gesture, in: viewport, tuning: tuning)
         switch outcome {
         case .present(let next):
             withAnimation(PlayerAnimation.mode) {

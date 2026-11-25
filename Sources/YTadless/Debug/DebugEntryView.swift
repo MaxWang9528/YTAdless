@@ -6,6 +6,7 @@
 // through to the webviews. The button opens the Debug panel as a sheet.
 
 import SwiftUI
+import UIKit
 
 struct DebugEntryView: View {
     let store: WebViewStore
@@ -13,8 +14,12 @@ struct DebugEntryView: View {
     let session: PlayerSession
 
     @State private var showsPanel = false
-    @State private var offset: CGFloat = 0
+    /// Live while dragging; saved to `AppSettings.debugButtonOffset` when the drag ends.
+    @State private var dragOffset: CGFloat?
     @State private var dragStart: CGFloat?
+
+    private var settings: AppSettings { AppSettings.shared }
+    private var offset: CGFloat { dragOffset ?? settings.debugButtonOffset }
 
     private static let size: CGFloat = 30
     /// Starting point: a little below the vertical middle, clear of YouTube's top bar and bottom
@@ -38,6 +43,16 @@ struct DebugEntryView: View {
         .sheet(isPresented: $showsPanel) {
             DebugPanelView(store: store, session: session, log: store.debugLog)
         }
+        // This overlay exists from launch, so it applies the settings that live outside a view.
+        .onAppear { settings.applyAppearance() }
+        .onChange(of: keepsScreenAwake, initial: true) { _, awake in
+            UIApplication.shared.isIdleTimerDisabled = awake
+        }
+    }
+
+    /// Settings › Keep screen awake: only while the player is playing (or about to).
+    private var keepsScreenAwake: Bool {
+        settings.keepScreenAwake && session.request != nil && session.playback.snapshot.status.isPlayingOrWaiting
     }
 
     private var button: some View {
@@ -67,9 +82,13 @@ struct DebugEntryView: View {
                 DragGesture(minimumDistance: 6)
                     .onChanged { value in
                         if dragStart == nil { dragStart = offset }
-                        offset = (dragStart ?? 0) + value.translation.height
+                        dragOffset = (dragStart ?? 0) + value.translation.height
                     }
-                    .onEnded { _ in dragStart = nil }
+                    .onEnded { _ in
+                        if let dragOffset { settings.debugButtonOffset = dragOffset }
+                        dragOffset = nil
+                        dragStart = nil
+                    }
             )
             .accessibilityLabel(unseen > 0 ? "Debug, \(unseen) new script errors" : "Debug")
             .accessibilityAddTraits(.isButton)

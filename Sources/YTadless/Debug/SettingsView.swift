@@ -1,0 +1,111 @@
+// SettingsView — owner: Module B (PLAN.md §6.2 Debug tooling › Settings).
+//
+// The Settings tab of the Debug panel. Every control writes AppSettings (persisted); see
+// AppSettings.swift for where each one takes effect.
+
+import SwiftUI
+import YTCore
+
+struct SettingsView: View {
+    let store: WebViewStore
+
+    @Bindable private var settings = AppSettings.shared
+    @State private var confirmsReset = false
+    /// Set when a content-rule toggle changed: the open pages keep what they already loaded.
+    @State private var rulesChangedSinceReload = false
+
+    var body: some View {
+        Form {
+            Section("Appearance") {
+                Picker("Theme", selection: $settings.appearance) {
+                    ForEach(AppSettings.Appearance.allCases) { Text($0.rawValue).tag($0) }
+                }
+                .pickerStyle(.segmented)
+            }
+
+            Section {
+                slider("Size", value: $settings.miniWidthFraction, in: PlayerPreferences.miniWidthFractionRange,
+                       step: 0.05, format: { "\(Int(($0 * 100).rounded())) %" })
+                slider("Corner radius", value: $settings.miniCornerRadius, in: PlayerPreferences.miniCornerRadiusRange,
+                       step: 1, format: { "\(Int($0)) pt" })
+                slider("Margin", value: $settings.miniMargin, in: PlayerPreferences.miniMarginRange,
+                       step: 1, format: { "\(Int($0)) pt" })
+                Toggle("Progress line", isOn: $settings.showsMiniProgress)
+            } header: {
+                Text("Mini player")
+            } footer: {
+                Text("Size is the width as a share of the screen's short side. Collapse the player to see changes live.")
+            }
+
+            Section {
+                Toggle("Swipe down on video to minimize", isOn: $settings.videoSwipeToMinimize)
+                slider("Drag distance", value: $settings.dragDistance, in: PlayerPreferences.dragDistanceRange,
+                       step: 10, format: { "\(Int($0)) pt" })
+            } header: {
+                Text("Gestures")
+            } footer: {
+                Text("How far a drag (with its fling) must travel to minimize, expand or close the player. The header and mini player always take drags.")
+            }
+
+            Section {
+                Toggle("Block ad requests", isOn: $settings.blockAdRequests)
+                    .disabled(store.contentRuleLists.network == nil)
+                Toggle("Hide ad elements", isOn: $settings.hideAdElements)
+                    .disabled(store.contentRuleLists.cosmetic == nil)
+                if rulesChangedSinceReload {
+                    Button("Reload both pages to apply", systemImage: "arrow.clockwise") {
+                        reloadBoth()
+                    }
+                }
+            } header: {
+                Text("Ad blocking")
+            } footer: {
+                Text("Content rules (rules/network.txt, rules/cosmetic.txt). New requests use the change at once; open pages need a reload. Video-ad and promoted-tile removal in the injected scripts stays on.")
+            }
+
+            Section {
+                Toggle("Keep screen awake while playing", isOn: $settings.keepScreenAwake)
+            } header: {
+                Text("Playback")
+            }
+
+            Section("Pages") {
+                Button("Reload browse", systemImage: "arrow.clockwise") { store.browseWebView.reload() }
+                Button("Reload player", systemImage: "arrow.clockwise") { store.playerWebView.reload() }
+                    .disabled(store.playerWebView.url == nil)
+                Button("Reset Debug button position", systemImage: "arrow.uturn.backward") {
+                    settings.debugButtonOffset = 0
+                }
+                .disabled(settings.debugButtonOffset == 0)
+            }
+
+            Section {
+                Button("Reset to defaults", role: .destructive) { confirmsReset = true }
+                    .confirmationDialog("Reset all settings to their defaults?", isPresented: $confirmsReset, titleVisibility: .visible) {
+                        Button("Reset", role: .destructive) { settings.resetToDefaults() }
+                    }
+            }
+        }
+        .onChange(of: settings.blockAdRequests) { rulesChanged() }
+        .onChange(of: settings.hideAdElements) { rulesChanged() }
+    }
+
+    private func rulesChanged() {
+        store.applyContentRules(settings)
+        rulesChangedSinceReload = true
+    }
+
+    private func reloadBoth() {
+        store.browseWebView.reload()
+        if store.playerWebView.url != nil { store.playerWebView.reload() }
+        rulesChangedSinceReload = false
+    }
+
+    private func slider(_ title: String, value: Binding<Double>, in range: ClosedRange<Double>, step: Double,
+                        format: @escaping (Double) -> String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            LabeledContent(title, value: format(value.wrappedValue))
+            Slider(value: value, in: range, step: step)
+        }
+    }
+}
