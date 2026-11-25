@@ -106,10 +106,6 @@ struct PlayerLayoutView: View {
             if showsChrome, let frame = layout.chromeFrame {
                 chrome(layout: layout, frame: frame, live: live, viewport: viewport)
             }
-
-            #if DEBUG
-            DebugPlayerMenu(store: store, session: session, viewport: viewport)
-            #endif
         }
         .frame(width: viewport.size.x, height: viewport.size.y, alignment: .topLeading)
         .statusBarHidden(layout.hidesStatusBar)

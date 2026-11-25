@@ -18,8 +18,7 @@ struct DebugEntryView: View {
 
     private static let size: CGFloat = 30
     /// Starting point: a little below the vertical middle, clear of YouTube's top bar and bottom
-    /// nav and of the mini-player's default bottom-trailing corner. 0.25 (≈75% down) also keeps it
-    /// clear of Module C's debug player-menu button on the same edge at 62% (DebugPlayerMenu).
+    /// nav and of the mini player in the bottom-trailing corner.
     private static let initialOffsetFraction: CGFloat = 0.25
 
     init(store: WebViewStore, hub: BridgeEventHub, session: PlayerSession) {
