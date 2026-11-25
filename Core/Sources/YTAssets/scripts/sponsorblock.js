@@ -13,6 +13,10 @@
 //            unresumed. An automatic skip isn't the user's intent.
 // Each segment is skipped at most once per load: seeking back into it plays it. A toast over the
 // player says what was skipped and offers Undo (seek back to the segment's start).
+// Markers: every segment is drawn as a coloured span on YouTube's seek bar (SponsorBlock's
+// colours), so you can see what will be skipped. When no seek bar is found (its classes are
+// unverified on device), a thin strip along the bottom of the player shows them instead. The
+// first render logs which one was used.
 (() => {
   'use strict';
 
@@ -23,7 +27,7 @@
     PATH_ID: /^\/(?:shorts|live)\/([A-Za-z0-9_-]{11})(?:[/?#]|$)/,
     QUERY_ID: /^[A-Za-z0-9_-]{11}$/,
     // Media events that can land the playhead in a segment.
-    MEDIA_EVENTS: ['timeupdate', 'seeked', 'playing', 'loadedmetadata'],
+    MEDIA_EVENTS: ['timeupdate', 'seeked', 'playing', 'loadedmetadata', 'durationchange'],
     HAVE_METADATA: 1,           // HTMLMediaElement.readyState: currentTime/duration are meaningful
     // Inside [start, end - END_EPSILON_S) counts as "in the segment": at its very end a seek
     // gains nothing (timeupdate fires ~4 Hz, i.e. every ~0.25 s, per the HTML spec's 15–250 ms).
@@ -39,6 +43,31 @@
     TOAST_CONTAINER_SELECTORS: ['#movie_player', '#player-container-id', '#player'],
     TOAST_ID: 'ytadless-sponsorblock-toast',
     TOAST_MS: 4000,
+    // Seek bar the markers go in, first match wins. mweb class names as of 2024–2026 (the
+    // SponsorBlock extension's mobile selectors and YouTube's shared progress bar); NOT in a
+    // fixture and unverified on device (2026-11-25): Debug › Capture a watch page to confirm.
+    SEEK_BAR_SELECTORS: [
+      '#movie_player .ytProgressBarLineProgressBarLine',
+      '#movie_player .YtmProgressBarProgressBarLine',
+      '#movie_player .ytm-progress-bar',
+      '#movie_player .ytp-progress-bar',
+    ],
+    MARKERS_ID: 'ytadless-sponsorblock-markers',
+    FALLBACK_STRIP_PX: 3,       // height of the strip along the player's bottom edge
+    MARKER_OPACITY: '0.85',
+    MARKER_CHECK_MS: 1000,      // re-find the bar at most this often (YouTube re-renders controls)
+    // SponsorBlock's default category colours (extension config.ts barTypes, 2026-11).
+    CATEGORY_COLORS: Object.freeze({
+      sponsor: '#00d400',
+      selfpromo: '#ffff00',
+      interaction: '#cc00ff',
+      intro: '#00ffff',
+      outro: '#0202ed',
+      preview: '#008fd6',
+      music_offtopic: '#ff9900',
+      filler: '#7300ff',
+    }),
+    DEFAULT_COLOR: '#00d400',
     // Labels (SponsorBlock categories: https://wiki.sponsor.ajay.app/w/Types, read 2026-11-25).
     CATEGORY_LABELS: Object.freeze({
       sponsor: 'sponsor',
@@ -62,6 +91,9 @@
     const done = new Set();    // keys skipped (or undone) in this load: never skipped again
     let toast = null;
     let toastTimer = null;
+    let markers = null;        // {el, host, duration, key, fallback}
+    let markersCheckedAt = -Infinity;
+    let loggedMarkerHost = '';
 
     const finiteOr = (value, fallback) => (typeof value === 'number' && Number.isFinite(value) ? value : fallback);
 
@@ -78,8 +110,11 @@
     }
 
     // ── video ───────────────────────────────────────────────────────────────────────────────
-    function onMediaEvent() {
-      ns.guard(SOURCE, () => check());
+    function onMediaEvent(e) {
+      ns.guard(SOURCE, () => {
+        check();
+        renderMarkers(e && (e.type === 'durationchange' || e.type === 'loadedmetadata'));
+      });
     }
 
     function attach(next) {
@@ -105,6 +140,7 @@
     ns.on('videoElement', (el) => ns.guard(SOURCE, () => {
       attach(el);
       check();
+      renderMarkers(true);
     }));
 
     // ── skipping ────────────────────────────────────────────────────────────────────────────
@@ -208,6 +244,89 @@
       }), CONFIG.TOAST_MS);
     }
 
+    // ── markers ─────────────────────────────────────────────────────────────────────────────
+    function removeMarkers() {
+      if (markers && markers.el.parentNode) markers.el.parentNode.removeChild(markers.el);
+      markers = null;
+    }
+
+    function findSeekBar() {
+      for (const selector of CONFIG.SEEK_BAR_SELECTORS) {
+        try {
+          const found = document.querySelector(selector);
+          if (found) return { el: found, selector };
+        } catch (_) { /* invalid selector: try the next */ }
+      }
+      return null;
+    }
+
+    function findPlayer() {
+      for (const selector of CONFIG.TOAST_CONTAINER_SELECTORS) {
+        const found = document.querySelector(selector);
+        if (found) return found;
+      }
+      return null;
+    }
+
+    // `force` re-renders now (new segments, new duration, new video element); otherwise the host
+    // is re-checked at most every MARKER_CHECK_MS, and nothing is rebuilt while it's unchanged.
+    function renderMarkers(force) {
+      const t = Date.now();
+      if (!force && t - markersCheckedAt < CONFIG.MARKER_CHECK_MS) return;
+      markersCheckedAt = t;
+
+      const v = currentVideo();
+      const duration = v ? finiteOr(v.duration, 0) : 0;
+      if (videoId === null || segments.length === 0 || pageVideoId() !== videoId || !(duration > 0)) {
+        removeMarkers();
+        return;
+      }
+      const bar = findSeekBar();
+      const host = bar ? bar.el : findPlayer();
+      if (!host) {
+        removeMarkers();
+        return;
+      }
+      const key = segments.map((s) => s.key).join(',') + '@' + duration;
+      if (markers && markers.host === host && markers.key === key && markers.el.parentNode === host) return;
+
+      removeMarkers();
+      const fallback = !bar;
+      const box = document.createElement('div');
+      box.id = CONFIG.MARKERS_ID;
+      box.setAttribute('aria-hidden', 'true');
+      Object.assign(box.style, fallback
+        ? { position: 'absolute', left: '0', right: '0', bottom: '0', height: CONFIG.FALLBACK_STRIP_PX + 'px',
+            pointerEvents: 'none', zIndex: '2147483646' }
+        : { position: 'absolute', left: '0', top: '0', width: '100%', height: '100%', pointerEvents: 'none', zIndex: '1' });
+      for (const segment of segments) {
+        const from = Math.max(0, Math.min(1, segment.start / duration));
+        const to = Math.max(0, Math.min(1, segment.end / duration));
+        if (to <= from) continue;
+        const mark = document.createElement('div');
+        mark.dataset.category = segment.category;
+        Object.assign(mark.style, {
+          position: 'absolute', top: '0', height: '100%',
+          left: (from * 100).toFixed(3) + '%', width: ((to - from) * 100).toFixed(3) + '%',
+          background: CONFIG.CATEGORY_COLORS[segment.category] || CONFIG.DEFAULT_COLOR,
+          opacity: CONFIG.MARKER_OPACITY,
+        });
+        box.appendChild(mark);
+      }
+      // An absolutely positioned child needs a positioned host; only a static one is changed.
+      try {
+        if (getComputedStyle(host).position === 'static') host.style.position = 'relative';
+      } catch (_) { /* keep going: worst case the markers are offset */ }
+      host.appendChild(box);
+      markers = { el: box, host, key, fallback };
+
+      const where = bar ? 'seek bar ' + bar.selector : 'fallback strip (no seek bar matched)';
+      if (where !== loggedMarkerHost) {
+        loggedMarkerHost = where;
+        ns.log('info', SOURCE, 'markers on ' + where);
+      }
+    }
+
     // ── command ─────────────────────────────────────────────────────────────────────────────
     function validSegments(list) {
       const out = [];
@@ -239,6 +358,7 @@
       segments = validSegments(args.segments);
       currentVideo();
       check();
+      renderMarkers(true);
       return { ok: true, count: segments.length };
     });
   });

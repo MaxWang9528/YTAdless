@@ -813,6 +813,9 @@ ignores `HTMLMediaElement.volume`, and Web Audio risks breaking background audio
 - The service caches results per video and re-sends `sponsorSegments` after every load (D15).
 - `sponsorblock.js` skips each segment once per load, with an Undo toast. It never skips during
   `ad-showing`.
+- Every segment is drawn on YouTube's seek bar in SponsorBlock's colours. The seek bar's
+  selectors are unverified on device. If none matches, a 3 px strip along the bottom of the
+  player shows them instead, and the log says which one was used.
 
 ## 7. Testing strategy (details and commands in CLAUDE.md)
 

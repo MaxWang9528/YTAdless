@@ -235,3 +235,92 @@ test('sponsorblock.js › empty segments (SponsorBlock turned off) › nothing s
   assert.equal(video.currentTime, 12);
   assertAll(page);
 });
+
+// ── markers (what will be skipped) ───────────────────────────────────────────────────────────
+const MARKERS = '#ytadless-sponsorblock-markers';
+const BAR_CLASS = 'ytProgressBarLineProgressBarLine';
+const marks = (page) => [...page.document.querySelectorAll(MARKERS + ' > div')];
+
+test('sponsorblock.js › markers › no seek bar → a strip along the player bottom, one span per segment', async (t) => {
+  const { page, send } = await sbPage(t);
+  await send([SPONSOR, { start: 100, end: 120, category: 'intro' }]);
+  const box = page.document.querySelector(MARKERS);
+  assert.ok(box, 'markers drawn');
+  assert.equal(box.parentNode.id, 'movie_player');
+  assert.equal(box.style.bottom, '0px');
+  assert.equal(box.style.pointerEvents, 'none');
+  const [a, b] = marks(page);
+  assert.equal(marks(page).length, 2);
+  assert.equal(a.dataset.category, 'sponsor');
+  assert.equal(a.style.left, (10 / 213 * 100).toFixed(3) + '%');
+  assert.equal(a.style.width, (20.5 / 213 * 100).toFixed(3) + '%');
+  assert.equal(b.dataset.category, 'intro');
+  assert.notEqual(a.style.background, b.style.background, 'categories have their own colours');
+  assert.equal(page.posted('log').filter((m) => m.source === 'sponsorblock.js' && /markers on fallback strip/.test(m.message)).length, 1);
+  assertAll(page);
+});
+
+test('sponsorblock.js › markers › YouTube seek bar present → drawn inside it', async (t) => {
+  const { page, send } = await sbPage(t);
+  const bar = page.document.createElement('div');
+  bar.className = BAR_CLASS;
+  page.document.querySelector('#movie_player').appendChild(bar);
+  await send([SPONSOR]);
+  const box = page.document.querySelector(MARKERS);
+  assert.equal(box.parentNode, bar);
+  assert.equal(bar.style.position, 'relative', 'a static host is positioned');
+  assert.equal(marks(page).length, 1);
+  assert.ok(page.posted('log').some((m) => m.source === 'sponsorblock.js' && m.message.includes('seek bar #movie_player .' + BAR_CLASS)));
+  assertAll(page);
+});
+
+test('sponsorblock.js › markers › seek bar rendered later → markers move to it on the next check', async (t) => {
+  const { page, send, at, clock } = await sbPage(t);
+  await send([SPONSOR]);
+  assert.equal(page.document.querySelector(MARKERS).parentNode.id, 'movie_player');
+  const bar = page.document.createElement('div');
+  bar.className = BAR_CLASS;
+  page.document.querySelector('#movie_player').appendChild(bar);
+  clock.advance(1100);
+  at(1);
+  assert.equal(page.document.querySelector(MARKERS).parentNode, bar);
+  assert.equal(page.document.querySelectorAll(MARKERS).length, 1, 'never two marker sets');
+  assertAll(page);
+});
+
+test('sponsorblock.js › markers › YouTube re-renders its controls → markers re-attached', async (t) => {
+  const { page, send, at, clock } = await sbPage(t);
+  const player = page.document.querySelector('#movie_player');
+  let bar = page.document.createElement('div');
+  bar.className = BAR_CLASS;
+  player.appendChild(bar);
+  await send([SPONSOR]);
+  bar.remove();
+  bar = page.document.createElement('div');
+  bar.className = BAR_CLASS;
+  player.appendChild(bar);
+  clock.advance(1100);
+  at(1);
+  assert.equal(page.document.querySelector(MARKERS).parentNode, bar);
+  assertAll(page);
+});
+
+test('sponsorblock.js › markers › empty segments or another video → removed', async (t) => {
+  const { page, send } = await sbPage(t);
+  await send([SPONSOR]);
+  assert.ok(page.document.querySelector(MARKERS));
+  await send([]);
+  assert.equal(page.document.querySelector(MARKERS), null);
+  assertAll(page);
+});
+
+test('sponsorblock.js › markers › unknown duration → nothing drawn until durationchange', async (t) => {
+  const { page, send, video, win } = await sbPage(t);
+  video.duration = NaN;
+  await send([SPONSOR]);
+  assert.equal(page.document.querySelector(MARKERS), null);
+  video.duration = 100;
+  video.dispatchEvent(new win.Event('durationchange'));
+  assert.equal(parseFloat(marks(page)[0].style.left), 10);
+  assertAll(page);
+});
