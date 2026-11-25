@@ -1,0 +1,83 @@
+[
+ {
+  "videoID": "aQp-iM0bCs4",
+  "segments": [
+   {
+    "category": "sponsor",
+    "actionType": "skip",
+    "segment": [0,31.861],
+    "UUID": "b772d4b75ca73ce63940fa982d051c031964160941efd93bd6ed1bbe9327a46e",
+    "videoDuration": 361,
+    "locked": 0,
+    "votes": 0,
+    "description": ""
+   }]
+ },
+ {
+  "videoID": "1a4_xdSUvRg",
+  "segments": [
+   {
+    "category": "sponsor",
+    "actionType": "skip",
+    "segment": [0,17.962606],
+    "UUID": "36696a0c5a955845fff0b84d20f1a75a712ad4112c1e3de1db428a7ac2c98f032",
+    "videoDuration": 825.181,
+    "locked": 0,
+    "votes": 0,
+    "description": ""
+   },
+   {
+    "category": "sponsor",
+    "actionType": "skip",
+    "segment": [104.90781,138.03996],
+    "UUID": "30dfb93b60bc3fd8bc90761bc254f16b92c4edd67c41ebcae91fc7131cedb7891",
+    "videoDuration": 825.181,
+    "locked": 0,
+    "votes": 0,
+    "description": ""
+   },
+   {
+    "category": "sponsor",
+    "actionType": "skip",
+    "segment": [785.8555,825.181],
+    "UUID": "37a8c4e38649b2a97e497680012f7a2736643900a99b6094a460473507241bed7",
+    "videoDuration": 825.181,
+    "locked": 0,
+    "votes": 0,
+    "description": ""
+   }]
+ },
+ {
+  "videoID": "WWfjoGZmrTo",
+  "segments": [
+   {
+    "category": "selfpromo",
+    "actionType": "skip",
+    "segment": [23.944,65.833],
+    "UUID": "cc4b5ba5cdfaf9986d6375d07dad4b8b7467fc294a7536269979863f0e8d41557",
+    "videoDuration": 940.661,
+    "locked": 1,
+    "votes": 1,
+    "description": ""
+   },
+   {
+    "category": "sponsor",
+    "actionType": "skip",
+    "segment": [65.733,104.28],
+    "UUID": "1c38f77f78c28d1304704c43fb1b85b9d4af560253264732aa18d153330a427e7",
+    "videoDuration": 940.661,
+    "locked": 1,
+    "votes": 1,
+    "description": ""
+   },
+   {
+    "category": "interaction",
+    "actionType": "skip",
+    "segment": [939.604,940.658],
+    "UUID": "08159835bd3506ff5d3831e97f43ce9aa13a69f28fe602de03c7730a280ce9d57",
+    "videoDuration": 940.65814,
+    "locked": 1,
+    "votes": 0,
+    "description": ""
+   }]
+ }]
