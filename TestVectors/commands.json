@@ -10,6 +10,7 @@
     { "swift": ".lifecycle(.background)",                       "name": "lifecycle",         "args": { "state": "background" },                  "handler": "background.js" },
     { "swift": ".audioInterruption(began: false, shouldResume: true)", "name": "audioInterruption", "args": { "phase": "ended", "shouldResume": true }, "handler": "background.js" },
     { "swift": ".layout(.video)",                               "name": "layout",            "args": { "mode": "video" },                        "handler": "layout.js" },
-    { "swift": ".capture",                                      "name": "capture",           "args": {},                                         "handler": "debug.js" }
+    { "swift": ".capture",                                      "name": "capture",           "args": {},                                         "handler": "debug.js" },
+    { "swift": ".sponsorSegments(videoId: \"dQw4w9WgXcQ\", segments: [SkipSegment(start: 10, end: 30.5, category: \"sponsor\")])", "name": "sponsorSegments", "args": { "segments": [{ "category": "sponsor", "end": 30.5, "start": 10 }], "videoId": "dQw4w9WgXcQ" }, "handler": "sponsorblock.js" }
   ]
 }

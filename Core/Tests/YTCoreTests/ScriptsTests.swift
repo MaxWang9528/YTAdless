@@ -31,6 +31,7 @@ struct ScriptManifestTests {
             .init(file: "player-bridge.js", roles: [.player], injection: .start, mainFrameOnly: true, owner: "D"),
             .init(file: "background.js", roles: [.player], injection: .start, mainFrameOnly: true, owner: "D"),
             .init(file: "media-session.js", roles: [.player], injection: .start, mainFrameOnly: true, owner: "D"),
+            .init(file: "sponsorblock.js", roles: [.player], injection: .start, mainFrameOnly: true, owner: "D"),
             .init(file: "layout.js", roles: [.player], injection: .end, mainFrameOnly: true, owner: "C"),
         ]
         #expect(try Self.shipped().scripts == expected)

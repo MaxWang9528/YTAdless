@@ -10,6 +10,7 @@
     { "file": "player-bridge.js", "roles": ["player"],           "injection": "start", "mainFrameOnly": true,  "owner": "D" },
     { "file": "background.js",    "roles": ["player"],           "injection": "start", "mainFrameOnly": true,  "owner": "D" },
     { "file": "media-session.js", "roles": ["player"],           "injection": "start", "mainFrameOnly": true,  "owner": "D" },
+    { "file": "sponsorblock.js",  "roles": ["player"],           "injection": "start", "mainFrameOnly": true,  "owner": "D" },
     { "file": "layout.js",        "roles": ["player"],           "injection": "end",   "mainFrameOnly": true,  "owner": "C" }
   ]
 }

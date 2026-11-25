@@ -147,6 +147,7 @@ struct JSCommandTests {
     static let commands: [JSCommand] = [
         .play, .pause, .seek(to: 42.5), .seekBy(-10), .pip(enter: true), .state,
         .lifecycle(.background), .audioInterruption(began: false, shouldResume: true), .layout(.video), .capture,
+        .sponsorSegments(videoId: "dQw4w9WgXcQ", segments: [SkipSegment(start: 10, end: 30.5, category: "sponsor")]),
     ]
 
     @Test("names and arguments match TestVectors/commands.json")
@@ -175,6 +176,16 @@ struct JSCommandTests {
     func nonFinite() {
         #expect(JSCommand.seek(to: .nan).argumentsJSON == #"{"to":0}"#)
         #expect(JSCommand.seekBy(.infinity).argumentsJSON == #"{"delta":0}"#)
+        #expect(JSCommand.sponsorSegments(videoId: "x", segments: [SkipSegment(start: .nan, end: .infinity, category: "intro")])
+            .argumentsJSON == #"{"segments":[{"category":"intro","end":0,"start":0}],"videoId":"x"}"#)
+    }
+
+    @Test("sponsorSegments: nested sorted keys; empty list")
+    func sponsorSegments() {
+        #expect(JSCommand.sponsorSegments(videoId: "dQw4w9WgXcQ", segments: []).argumentsJSON
+                == #"{"segments":[],"videoId":"dQw4w9WgXcQ"}"#)
+        #expect(JSCommand.sponsorSegments(videoId: "a", segments: [SkipSegment(start: 1, end: 2.5, category: "sponsor")])
+            .argumentsJSON == #"{"segments":[{"category":"sponsor","end":2.5,"start":1}],"videoId":"a"}"#)
     }
 
     @Test("the function body only references the named arguments")

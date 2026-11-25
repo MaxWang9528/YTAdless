@@ -9,10 +9,27 @@ import Foundation
 public enum AppLifecycle: String, Codable, CaseIterable, Sendable { case active, inactive, background }
 public enum PageLayout: String, Codable, CaseIterable, Sendable { case page, video }
 
+/// A SponsorBlock segment to skip, in seconds of the video (`sponsorSegments`, added 2026-11-25
+/// with the user's approval). `category` is SponsorBlock's name (`sponsor`, `selfpromo`, …).
+public struct SkipSegment: Codable, Equatable, Sendable {
+    public var start: Double
+    public var end: Double
+    public var category: String
+
+    public init(start: Double, end: Double, category: String) {
+        self.start = start
+        self.end = end
+        self.category = category
+    }
+}
+
 public enum JSCommand: Equatable, Sendable {
     case play, pause, seek(to: Double), seekBy(Double), pip(enter: Bool), state
     case lifecycle(AppLifecycle), audioInterruption(began: Bool, shouldResume: Bool)
     case layout(PageLayout), capture
+    /// The segments sponsorblock.js skips in video `videoId`. Empty = skip nothing (SponsorBlock
+    /// off, or no segments). Native re-sends it after every player load (D15).
+    case sponsorSegments(videoId: String, segments: [SkipSegment])
 
     /// The function body passed to `callAsyncJavaScript`. It reads the two named arguments
     /// `name` and `args`; it never contains data.
@@ -32,6 +49,7 @@ public enum JSCommand: Equatable, Sendable {
         case .audioInterruption: "audioInterruption"
         case .layout: "layout"
         case .capture: "capture"
+        case .sponsorSegments: "sponsorSegments"
         }
     }
 
@@ -47,6 +65,13 @@ public enum JSCommand: Equatable, Sendable {
         case .audioInterruption(let began, let shouldResume):
             object = ["phase": began ? "began" : "ended", "shouldResume": shouldResume]
         case .layout(let mode): object = ["mode": mode.rawValue]
+        case .sponsorSegments(let videoId, let segments):
+            object = [
+                "videoId": videoId,
+                "segments": segments.map {
+                    ["start": Self.finite($0.start), "end": Self.finite($0.end), "category": $0.category] as [String: Any]
+                },
+            ]
         }
         guard let data = try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys]),
               let json = String(data: data, encoding: .utf8)

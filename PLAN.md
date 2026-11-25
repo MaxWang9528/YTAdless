@@ -132,7 +132,7 @@ YTadless/
 Swift (`ScriptManifest`) and the Node harness both read this file, so the device and the tests
 load the same scripts in the same order. All scripts run in the **page** content world (D5).
 
-`manifest.json` lists the **10 files** below (#1–#10). The config prelude (#0) is generated, not
+`manifest.json` lists the **11 files** below (#1–#11; sponsorblock.js added 2026-11-25 with the user's approval). The config prelude (#0) is generated, not
 a file, so it is not a manifest entry: both loaders always put it first.
 `ScriptManifest.injectionPlan(for:debug:build:load:)` (Swift) and `injectionPlan()` (harness)
 build the same list, `[prelude.js, …entries(for: role)]`. Each source gets a
@@ -151,7 +151,8 @@ checks the structure: bridge.js first, unique plain `.js` names, non-empty roles
 | 7 | player-bridge.js | player | start | main | P0→D |
 | 8 | background.js | player | start | main | D |
 | 9 | media-session.js | player | start | main | D |
-| 10 | layout.js | player | end | main | C |
+| 10 | sponsorblock.js | player | start | main | D |
+| 11 | layout.js | player | end | main | C |
 
 ```json
 { "version": 1,
@@ -259,6 +260,7 @@ Arguments always travel as a JSON string, never interpolated into source.
 | `audioInterruption` | `{phase:'began'\|'ended', shouldResume}` | background.js (D) | D |
 | `layout` | `{mode:'page'\|'video'}` | layout.js (C) | C |
 | `capture` | → `{url, title, html, originals[], counters, log[]}` | debug.js (B) | B Debug menu |
+| `sponsorSegments` | `{videoId, segments: [{start, end, category}]}` → `{ok: true, count}` | sponsorblock.js (D) | D, after each player `videoMeta` and on a settings change (added 2026-11-25, user-approved) |
 
 ### 5.5 Swift contracts (Phase 0 writes every signature; owners fill in bodies)
 
