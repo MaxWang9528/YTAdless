@@ -17,7 +17,9 @@ struct SegmentsView: View {
     @Bindable private var settings = AppSettings.shared
 
     private static let scriptSource = "sponsorblock.js"
-    private static let historyPrefixes = ["skipped ", "undo", "suggestion"]
+    private static let historyPrefixes = ["skipped ", "undo", "suggestion", "prompt"]
+
+    private static func mode(_ autoSkip: Bool) -> String { autoSkip ? "skipped automatically" : "Skip button" }
 
     private var videoId: String? { session.playback.meta?.videoId ?? session.playback.snapshot.videoId }
     private var position: Double { session.playback.snapshot.position }
@@ -38,7 +40,7 @@ struct SegmentsView: View {
             Section {
                 segmentRows(board.sponsorBlock, suggested: false, emptyText: sponsorBlockEmptyText)
             } header: {
-                Text("SponsorBlock (skipped automatically)")
+                Text("SponsorBlock (" + Self.mode(settings.sponsorBlockAutoSkip) + ")")
             } footer: {
                 total(board.sponsorBlock)
             }
@@ -46,7 +48,7 @@ struct SegmentsView: View {
             Section {
                 segmentRows(board.suggested, suggested: true, emptyText: suggestionsEmptyText)
             } header: {
-                Text("Possible sponsors (on-device AI, never skipped by itself)")
+                Text("Possible sponsors (on-device AI, " + Self.mode(settings.aiSponsorAutoSkip) + ")")
             } footer: {
                 total(board.suggested)
             }

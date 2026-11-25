@@ -13,6 +13,8 @@ final class SegmentBoard {
     struct Entry: Equatable {
         let videoId: String
         let segments: [SkipSegment]
+        /// Sent with `autoSkip`: skipped automatically (true) or offered with a Skip button.
+        let autoSkip: Bool
         let sentAt: Date
     }
 
@@ -21,11 +23,11 @@ final class SegmentBoard {
     /// The last `suggestedSegments` sent.
     private(set) var suggested: Entry?
 
-    func sentSponsorBlock(videoId: String, segments: [SkipSegment]) {
-        sponsorBlock = Entry(videoId: videoId, segments: segments, sentAt: Date())
+    func sentSponsorBlock(videoId: String, segments: [SkipSegment], autoSkip: Bool) {
+        sponsorBlock = Entry(videoId: videoId, segments: segments, autoSkip: autoSkip, sentAt: Date())
     }
 
-    func sentSuggestions(videoId: String, segments: [SkipSegment]) {
-        suggested = Entry(videoId: videoId, segments: segments, sentAt: Date())
+    func sentSuggestions(videoId: String, segments: [SkipSegment], autoSkip: Bool) {
+        suggested = Entry(videoId: videoId, segments: segments, autoSkip: autoSkip, sentAt: Date())
     }
 }

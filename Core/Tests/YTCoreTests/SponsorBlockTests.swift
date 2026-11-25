@@ -147,6 +147,6 @@ struct SponsorBlockTests {
         let data = try Repo.data(Self.fixture)
         let segments = try SponsorBlock.segments(from: data, statusCode: 200, videoId: "aQp-iM0bCs4", categories: [.sponsor])
         #expect(JSCommand.sponsorSegments(videoId: "aQp-iM0bCs4", segments: segments).argumentsJSON
-            == #"{"segments":[{"category":"sponsor","end":31.861,"start":0}],"videoId":"aQp-iM0bCs4"}"#)
+            == #"{"autoSkip":true,"segments":[{"category":"sponsor","end":31.861,"start":0}],"videoId":"aQp-iM0bCs4"}"#)
     }
 }

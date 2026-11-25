@@ -179,15 +179,27 @@ struct JSCommandTests {
         #expect(JSCommand.seek(to: .nan).argumentsJSON == #"{"to":0}"#)
         #expect(JSCommand.seekBy(.infinity).argumentsJSON == #"{"delta":0}"#)
         #expect(JSCommand.sponsorSegments(videoId: "x", segments: [SkipSegment(start: .nan, end: .infinity, category: "intro")])
-            .argumentsJSON == #"{"segments":[{"category":"intro","end":0,"start":0}],"videoId":"x"}"#)
+            .argumentsJSON == #"{"autoSkip":true,"segments":[{"category":"intro","end":0,"start":0}],"videoId":"x"}"#)
     }
 
     @Test("sponsorSegments: nested sorted keys; empty list")
     func sponsorSegments() {
         #expect(JSCommand.sponsorSegments(videoId: "dQw4w9WgXcQ", segments: []).argumentsJSON
-                == #"{"segments":[],"videoId":"dQw4w9WgXcQ"}"#)
+                == #"{"autoSkip":true,"segments":[],"videoId":"dQw4w9WgXcQ"}"#)
         #expect(JSCommand.sponsorSegments(videoId: "a", segments: [SkipSegment(start: 1, end: 2.5, category: "sponsor")])
-            .argumentsJSON == #"{"segments":[{"category":"sponsor","end":2.5,"start":1}],"videoId":"a"}"#)
+            .argumentsJSON == #"{"autoSkip":true,"segments":[{"category":"sponsor","end":2.5,"start":1}],"videoId":"a"}"#)
+    }
+
+    @Test("autoSkip: defaults (sponsor true, suggested false) and explicit values")
+    func autoSkip() {
+        #expect(JSCommand.sponsorSegments(videoId: "a", segments: [], autoSkip: false).argumentsJSON
+                == #"{"autoSkip":false,"segments":[],"videoId":"a"}"#)
+        #expect(JSCommand.suggestedSegments(videoId: "a", segments: []).argumentsJSON
+                == #"{"autoSkip":false,"segments":[],"videoId":"a"}"#)
+        #expect(JSCommand.suggestedSegments(videoId: "a", segments: [], autoSkip: true).argumentsJSON
+                == #"{"autoSkip":true,"segments":[],"videoId":"a"}"#)
+        #expect(JSCommand.sponsorSegments(videoId: "a", segments: [], autoSkip: false)
+                != JSCommand.sponsorSegments(videoId: "a", segments: []))
     }
 
     @Test("the function body only references the named arguments")

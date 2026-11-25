@@ -38,7 +38,7 @@ final class SponsorBlockService {
     /// The player's current video (from its last videoMeta): id and whether it is live.
     private var current: (videoId: String, isLive: Bool)?
     /// Settings last acted on, so a change that doesn't alter them does nothing.
-    private var applied: (enabled: Bool, categories: Set<SponsorBlock.Category>)
+    private var applied: (enabled: Bool, categories: Set<SponsorBlock.Category>, autoSkip: Bool)
     /// Cache key ("<videoId>|<categories>") → segments, most recent last.
     private var cache: [String: [SkipSegment]] = [:]
     private var cacheOrder: [String] = []
@@ -51,7 +51,7 @@ final class SponsorBlockService {
         self.hub = hub
         self.settings = settings
         self.log = log
-        applied = (settings.sponsorBlockEnabled, settings.sponsorBlockCategories)
+        applied = (settings.sponsorBlockEnabled, settings.sponsorBlockCategories, settings.sponsorBlockAutoSkip)
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = Self.requestTimeout
         configuration.timeoutIntervalForResource = Self.resourceTimeout
@@ -83,6 +83,7 @@ final class SponsorBlockService {
         withObservationTracking {
             _ = settings.sponsorBlockEnabled
             _ = settings.sponsorBlockCategories
+            _ = settings.sponsorBlockAutoSkip
         } onChange: { [weak self] in
             // Fires before the new value is stored: read it on the next main-actor turn.
             Task { @MainActor [weak self] in
@@ -95,8 +96,10 @@ final class SponsorBlockService {
     private func settingsChanged() {
         let enabled = settings.sponsorBlockEnabled
         let categories = settings.sponsorBlockCategories
-        guard enabled != applied.enabled || categories != applied.categories else { return }
-        applied = (enabled, categories)
+        let autoSkip = settings.sponsorBlockAutoSkip
+        guard enabled != applied.enabled || categories != applied.categories || autoSkip != applied.autoSkip
+        else { return }
+        applied = (enabled, categories, autoSkip)
         guard session.request != nil, let current, !current.isLive else { return }
         if enabled {
             update(videoId: current.videoId)
@@ -183,8 +186,9 @@ final class SponsorBlockService {
     var board: SegmentBoard?
 
     private func send(videoId: String, segments: [SkipSegment]) {
-        board?.sentSponsorBlock(videoId: videoId, segments: segments)
-        let command = JSCommand.sponsorSegments(videoId: videoId, segments: segments)
+        let autoSkip = settings.sponsorBlockAutoSkip
+        board?.sentSponsorBlock(videoId: videoId, segments: segments, autoSkip: autoSkip)
+        let command = JSCommand.sponsorSegments(videoId: videoId, segments: segments, autoSkip: autoSkip)
         Task { [player, log] in
             do {
                 try await player.send(command)

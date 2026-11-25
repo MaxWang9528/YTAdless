@@ -9,8 +9,8 @@
 //      `baseUrl&fmt=json3` over an ephemeral URLSession (no cookies; anonymous works, checked
 //      2026-11-25) → SponsorDetector (FoundationModels, off the main actor).
 //   4. Cache the result per video (LRU of 32, including "none found") and send
-//      `suggestedSegments`. sponsorblock.js shows them as dashed marks with a Skip button and
-//      never skips them by itself.
+//      `suggestedSegments` with `autoSkip` = Settings › "Skip automatically" (off by default):
+//      sponsorblock.js shows them as dashed marks with a Skip button, or skips them with Undo.
 // D15 reloads the page for each video, so suggestions are re-sent (from the cache) on every
 // `videoMeta`. Setting off → in-flight runs are cancelled and empty suggestions sent. Switching
 // videos cancels the old run (a 3-hour podcast shouldn't keep the model busy).
@@ -45,6 +45,7 @@ final class SponsorDetectionService {
     private var subscription: AnyObject?
     private var current: (videoId: String, isLive: Bool)?
     private var applied: Bool
+    private var appliedAutoSkip: Bool
     /// videoId → suggestions (possibly []), most recent last.
     private var cache: [String: [SkipSegment]] = [:]
     private var cacheOrder: [String] = []
@@ -65,6 +66,7 @@ final class SponsorDetectionService {
         self.settings = settings
         self.log = log
         applied = settings.aiSponsorDetection
+        appliedAutoSkip = settings.aiSponsorAutoSkip
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = Self.requestTimeout
         configuration.timeoutIntervalForResource = Self.resourceTimeout
@@ -100,6 +102,7 @@ final class SponsorDetectionService {
     private func observeSettings() {
         withObservationTracking {
             _ = settings.aiSponsorDetection
+            _ = settings.aiSponsorAutoSkip
             _ = settings.sponsorBlockEnabled
             _ = settings.sponsorBlockCategories
         } onChange: { [weak self] in
@@ -115,7 +118,15 @@ final class SponsorDetectionService {
         let enabled = settings.aiSponsorDetection
         let toggled = enabled != applied
         applied = enabled
+        let autoSkipChanged = settings.aiSponsorAutoSkip != appliedAutoSkip
+        appliedAutoSkip = settings.aiSponsorAutoSkip
         guard session.request != nil, let current, !current.isLive else { return }
+        if enabled, autoSkipChanged, inFlight[current.videoId] == nil,
+           let shown = board?.suggested, shown.videoId == current.videoId {
+            // Only the mode changed: re-send what is shown (a running task sends with the new mode).
+            send(videoId: current.videoId, segments: shown.segments)
+            return
+        }
         if !enabled {
             guard toggled else { return }
             for task in inFlight.values { task.cancel() }
@@ -244,8 +255,9 @@ final class SponsorDetectionService {
     var board: SegmentBoard?
 
     private func send(videoId: String, segments: [SkipSegment]) {
-        board?.sentSuggestions(videoId: videoId, segments: segments)
-        let command = JSCommand.suggestedSegments(videoId: videoId, segments: segments)
+        let autoSkip = settings.aiSponsorAutoSkip
+        board?.sentSuggestions(videoId: videoId, segments: segments, autoSkip: autoSkip)
+        let command = JSCommand.suggestedSegments(videoId: videoId, segments: segments, autoSkip: autoSkip)
         Task { [player, log] in
             do {
                 try await player.send(command)

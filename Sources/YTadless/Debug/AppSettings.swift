@@ -12,6 +12,7 @@
 //   sponsorBlockEnabled /
 //   sponsorBlockCategories → SponsorBlockService (Module D) observes them and re-sends segments
 //   aiSponsorDetection  → SponsorDetectionService (Module D): on-device guesses when SponsorBlock has none
+//   sponsorBlockAutoSkip / aiSponsorAutoSkip → the services send them as `autoSkip` (Skip button when off)
 // Defaults reproduce the app's behaviour before settings existed.
 
 import SwiftUI
@@ -53,8 +54,12 @@ final class AppSettings {
         didSet { save(SponsorBlock.Category.rawValues(sponsorBlockCategories), .sponsorBlockCategories) }
     }
     /// Off by default: when on, the transcript of a video SponsorBlock has nothing for is analysed
-    /// on the iPhone (Apple Intelligence) and likely sponsor reads are suggested, never auto-skipped.
+    /// on the iPhone (Apple Intelligence) and likely sponsor reads are suggested (see aiSponsorAutoSkip).
     var aiSponsorDetection: Bool { didSet { save(aiSponsorDetection, .aiSponsorDetection) } }
+    /// Off by default: SponsorBlock segments show a Skip button instead of being skipped.
+    var sponsorBlockAutoSkip: Bool { didSet { save(sponsorBlockAutoSkip, .sponsorBlockAutoSkip) } }
+    /// Off by default: on-device guesses show a Skip button instead of being skipped.
+    var aiSponsorAutoSkip: Bool { didSet { save(aiSponsorAutoSkip, .aiSponsorAutoSkip) } }
 
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private var windowObserver: NSObjectProtocol?
@@ -63,6 +68,7 @@ final class AppSettings {
         case appearance, miniWidthFraction, miniCornerRadius, miniMargin, showsMiniProgress, dragDistance
         case videoSwipeToMinimize, blockAdRequests, hideAdElements, keepScreenAwake, debugButtonOffset
         case sponsorBlockEnabled, sponsorBlockCategories, aiSponsorDetection
+        case sponsorBlockAutoSkip, aiSponsorAutoSkip
         var name: String { "ytadless.settings." + rawValue }
     }
 
@@ -84,6 +90,8 @@ final class AppSettings {
         sponsorBlockCategories = defaults.stringArray(forKey: Key.sponsorBlockCategories.name)
             .map(SponsorBlock.Category.set(fromRawValues:)) ?? SponsorBlock.Category.defaults
         aiSponsorDetection = Self.bool(defaults, .aiSponsorDetection) ?? false
+        sponsorBlockAutoSkip = Self.bool(defaults, .sponsorBlockAutoSkip) ?? false
+        aiSponsorAutoSkip = Self.bool(defaults, .aiSponsorAutoSkip) ?? false
         // A window that appears later (a new scene) gets the current appearance too.
         windowObserver = NotificationCenter.default.addObserver(
             forName: UIWindow.didBecomeVisibleNotification, object: nil, queue: .main
@@ -116,6 +124,8 @@ final class AppSettings {
         sponsorBlockEnabled = false
         sponsorBlockCategories = SponsorBlock.Category.defaults
         aiSponsorDetection = false
+        sponsorBlockAutoSkip = false
+        aiSponsorAutoSkip = false
     }
 
     /// Sets the style on every window of every scene. Called at launch and on change.

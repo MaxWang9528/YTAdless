@@ -70,7 +70,9 @@ struct SettingsView: View {
             }
 
             Section {
-                Toggle("Skip sponsored segments", isOn: $settings.sponsorBlockEnabled)
+                Toggle("Use SponsorBlock", isOn: $settings.sponsorBlockEnabled)
+                Toggle("Skip automatically", isOn: $settings.sponsorBlockAutoSkip)
+                    .disabled(!settings.sponsorBlockEnabled)
                 ForEach(SponsorBlock.Category.allCases) { category in
                     Toggle(category.displayName, isOn: categoryBinding(category))
                         .disabled(!settings.sponsorBlockEnabled)
@@ -78,11 +80,13 @@ struct SettingsView: View {
             } header: {
                 Text("SponsorBlock")
             } footer: {
-                Text("Skips segments the SponsorBlock community marked (sponsor.ajay.app), with an Undo button. To look a video up, only the first 4 characters of a SHA-256 hash of its ID are sent, never the ID itself. The data is crowd-sourced and can be wrong.")
+                Text("Finds segments the SponsorBlock community marked (sponsor.ajay.app). With \"Skip automatically\" on they are skipped with an Undo button; off, a Skip button appears when one starts. To look a video up, only the first 4 characters of a SHA-256 hash of its ID are sent, never the ID itself. The data is crowd-sourced and can be wrong.")
             }
 
             Section {
                 Toggle("Detect sponsors with on-device AI", isOn: $settings.aiSponsorDetection)
+                Toggle("Skip automatically", isOn: $settings.aiSponsorAutoSkip)
+                    .disabled(!settings.aiSponsorDetection)
                 let status = SponsorDetector.status
                 if !status.isAvailable {
                     Label(status.message, systemImage: "exclamationmark.triangle")
@@ -90,7 +94,7 @@ struct SettingsView: View {
                         .foregroundStyle(.secondary)
                 }
             } footer: {
-                Text("Runs only when SponsorBlock is off or has no segments for a video. The video's transcript is analysed on this iPhone with Apple Intelligence and never leaves the phone. Guesses are shown as dashed marks on the seek bar with a Skip button, and are never skipped automatically.")
+                Text("Runs only when SponsorBlock is off or has no segments for a video. The video's transcript is analysed on this iPhone with Apple Intelligence and never leaves the phone. Guesses are shown as dashed marks on the seek bar. With \"Skip automatically\" off a Skip button appears when one starts; on, they are skipped with an Undo button (guesses can be wrong).")
             }
 
             Section("Pages") {
