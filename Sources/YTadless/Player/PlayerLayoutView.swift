@@ -17,7 +17,7 @@ struct PlayerLayoutView: View {
     let store: WebViewStore
     let session: PlayerSession
 
-    /// Live finger offset while dragging the header, docked bar or mini-player.
+    /// Live finger offset while dragging the header, the expanded video or the mini player.
     @State private var dragOffset: CGSize = .zero
     @State private var layoutSync = PageLayoutSync()
     /// Swipe down on the video (inside the webview) to minimize.
@@ -65,8 +65,9 @@ struct PlayerLayoutView: View {
     @ViewBuilder
     private func content(layout: PlayerLayout, viewport: PresentationViewport) -> some View {
         let live = liveOffset(for: layout)
-        let isBar = layout.chrome == .miniBar
+        let isMini = layout.chrome == .miniPlayer
         let bar = layout.chromeFrame ?? PlanarRect(x: 0, y: 0, width: 0, height: 0)
+        let miniRadius = PresentationTuning.standard.miniCornerRadius
         // WebKit fullscreen (the page's own fullscreen button) covers everything; hide ours.
         let showsChrome = session.playback.presentation != .fullscreen
         ZStack(alignment: .topLeading) {
@@ -85,11 +86,11 @@ struct PlayerLayoutView: View {
                 .offset(x: 0, y: live.height)
                 .allowsHitTesting(false)
 
-            // The mini bar's background, behind the video.
-            MiniBarBackground()
+            // The mini player's shadow, behind the video.
+            MiniPlayerBackground(cornerRadius: miniRadius)
                 .frame(width: bar.width, height: bar.height)
                 .offset(x: bar.minX + live.width, y: bar.minY + live.height)
-                .opacity(isBar && showsChrome ? 1 : 0)
+                .opacity(isMini && showsChrome ? 1 : 0)
                 .allowsHitTesting(false)
 
             WebViewContainer(webView: store.playerWebView)
@@ -98,8 +99,8 @@ struct PlayerLayoutView: View {
                 .clipShape(RoundedRectangle(cornerRadius: layout.playerCornerRadius, style: .continuous))
                 .scaleEffect(layout.playerScale, anchor: .topLeading)
                 .offset(x: layout.player.minX + live.width, y: layout.player.minY + live.height)
-                // Mini bar: the overlay takes every touch (tap, drag), so the page never sees them.
-                .allowsHitTesting(layout.isPlayerVisible && !isBar)
+                // Mini player: the overlay takes every touch (tap, drag), so the page never sees them.
+                .allowsHitTesting(layout.isPlayerVisible && !isMini)
                 .accessibilityHidden(!layout.isPlayerVisible)
 
             if showsChrome, let frame = layout.chromeFrame {
@@ -131,14 +132,13 @@ struct PlayerLayoutView: View {
                 .frame(width: frame.width, height: frame.height)
                 .offset(x: frame.minX + live.width, y: frame.minY + live.height)
                 .gesture(dragGesture(viewport: viewport))
-        case .miniBar:
+        case .miniPlayer:
             let snapshot = session.playback.snapshot
-            MiniBarOverlay(
+            MiniPlayerOverlay(
                 actions: actions,
-                meta: session.playback.meta,
-                videoWidth: layout.playerVisualFrame.maxX - frame.minX,
                 progress: MiniPlayerGeometry.progress(position: snapshot.position, duration: snapshot.duration ?? session.playback.meta?.lengthSeconds),
-                progressHeight: PresentationTuning.standard.progressHeight
+                progressHeight: PresentationTuning.standard.progressHeight,
+                cornerRadius: PresentationTuning.standard.miniCornerRadius
             )
             .frame(width: frame.width, height: frame.height)
             .offset(x: frame.minX + live.width, y: frame.minY + live.height)
@@ -168,16 +168,15 @@ struct PlayerLayoutView: View {
         }
     }
 
-    /// How the finger moves the player: expanded follows downward only; the mini bar follows
-    /// vertically (damped upward), or sideways once the drag is clearly horizontal.
+    /// How the finger moves the player: expanded follows downward only; the mini player follows
+    /// the finger (damped upward, since up means expand).
     private func liveOffset(for layout: PlayerLayout) -> CGSize {
         switch layout.chrome {
         case .header:
             return CGSize(width: 0, height: max(0, dragOffset.height))
-        case .miniBar:
+        case .miniPlayer:
             let dx = dragOffset.width, dy = dragOffset.height
-            if abs(dx) > 2 * abs(dy) { return CGSize(width: dx, height: 0) }
-            return CGSize(width: 0, height: dy < 0 ? dy / 3 : dy)
+            return CGSize(width: dx, height: dy < 0 ? dy / 3 : dy)
         case .none:
             return .zero
         }

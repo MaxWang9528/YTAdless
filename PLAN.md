@@ -661,20 +661,21 @@ Other B work:
 `PlayerLayoutView` lays out both webviews. Each one lives in a single persistent container that is
 **never removed or re-parented** (D2); mode changes only animate frame, offset and scale.
 
-**UI follows the YouTube app (user decision, 2026-11-24):** an app-like expanded watch view, and a
-mini bar above m.youtube.com's own bottom nav (the site's nav is kept; no native tab bar). The
-frozen `PlayerPresentation` enum still has `docked` and four mini corners; all of them render as
-the mini bar, and C only produces `PlayerPresentation.miniBar` (= `.mini(.bottomLeading)`).
+**UI follows the YouTube app (user decisions, 2026-11-24):** dark mode always (Info.plist
+`UIUserInterfaceStyle`), an app-like expanded watch view, and a floating mini player in the
+bottom-right corner above m.youtube.com's own bottom nav (the site's nav is kept; no native tab
+bar). The frozen `PlayerPresentation` enum still has `docked` and four mini corners; all of them
+render as that mini player, and C only produces `PlayerPresentation.miniPlayer` (= `.mini(.bottomTrailing)`).
 
 | mode | player | browse |
 |---|---|---|
 | hidden | off-screen; the WKWebView stays in the hierarchy | full screen |
 | expanded | under a slim native header (chevron, grabber, PiP); watch view with the video pinned at the top (`layout: page`) | behind |
-| mini bar (`docked`, `mini(*)`) | the full-width 16:9 player scaled to the bar's height (so the page doesn't reflow), in the leading slot of a bar pinned above the site's bottom nav; title, channel, play/pause, close, progress line; `layout: video` | full screen |
+| mini player (`docked`, `mini(*)`) | the full-width 16:9 player scaled to half the screen's short side (so the page doesn't reflow), floating bottom-right above the site's bottom nav with rounded corners and a shadow; close, play/pause and a progress line on the video; `layout: video` | full screen |
 
 Expanded in landscape becomes a full-screen video (`layout: video`); the landscape orientations
 come from Config/Info.plist. Gestures: drag the header or the video down (or tap the chevron) to minimize; tap
-the bar or drag it up to expand; drag it down or fling it sideways to `close()`.
+the mini player or drag it up to expand; drag it down or fling it sideways to `close()`.
 
 In expanded mode, YouTube's own controls are used; PiP is in the native header.
 
@@ -684,7 +685,7 @@ offsets as YouTube's own `header-in-player` variant. In `video` mode it also hid
 and pins the player container to the viewport.
 
 Pure parts go in `YTCore/Presentation`: the transition rules (`next(after: gesture)`) and the
-mini bar geometry (bar frame, scale, velocity projection, progress). They are tested there.
+mini player geometry (frame, scale, velocity projection, progress). They are tested there.
 
 Until B merges, C can open videos through a `#if DEBUG` "Open test video" entry inside its own files.
 

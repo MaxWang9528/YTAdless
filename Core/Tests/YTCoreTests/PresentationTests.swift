@@ -1,5 +1,5 @@
 // Presentation state machine and player geometry (PLAN.md §6.3). Owner: Module C.
-// App-style UI: expanded watch view, and a mini bar above m.youtube.com's bottom nav.
+// App-style UI: expanded watch view, and a floating mini player bottom-right, above m.youtube.com's bottom nav.
 
 import Testing
 @testable import YTCore
@@ -9,7 +9,7 @@ private let portrait = PresentationViewport(size: PlanarVector(393, 852), safeAr
 private let landscape = PresentationViewport(size: PlanarVector(852, 393), safeArea: PlanarInsets(leading: 59, bottom: 21, trailing: 59))
 private let tuning = PresentationTuning.standard
 
-/// Every mode the frozen contract has that is drawn as the mini bar.
+/// Every mode the frozen contract has that is drawn as the mini player.
 private let miniModes: [PlayerPresentation] = [.docked] + PlayerPresentation.Corner.allCases.map { .mini($0) }
 private let visibleModes: [PlayerPresentation] = [.expanded] + miniModes
 private let allModes: [PlayerPresentation] = [.hidden] + visibleModes
@@ -41,9 +41,9 @@ struct PresentationStateMachineTests {
         #expect(mode.next(after: .closeButton, in: portrait) == .close)
     }
 
-    @Test("collapse goes to the mini bar", arguments: visibleModes)
+    @Test("collapse goes to the mini player", arguments: visibleModes)
     func collapse(mode: PlayerPresentation) {
-        #expect(mode.next(after: .collapseButton, in: portrait) == .present(.miniBar))
+        #expect(mode.next(after: .collapseButton, in: portrait) == .present(.miniPlayer))
     }
 
     @Test("expanded › a short drag down springs back")
@@ -52,10 +52,10 @@ struct PresentationStateMachineTests {
         #expect(PlayerPresentation.expanded.next(after: drag(0, -300), in: portrait) == .present(.expanded))
     }
 
-    @Test("expanded › a drag or flick down minimizes to the bar")
+    @Test("expanded › a drag or flick down minimizes to the mini player")
     func expandedDragDown() {
-        #expect(PlayerPresentation.expanded.next(after: drag(0, 200), in: portrait) == .present(.miniBar))
-        #expect(PlayerPresentation.expanded.next(after: drag(0, 20, velocity: 0, 1500), in: portrait) == .present(.miniBar))
+        #expect(PlayerPresentation.expanded.next(after: drag(0, 200), in: portrait) == .present(.miniPlayer))
+        #expect(PlayerPresentation.expanded.next(after: drag(0, 20, velocity: 0, 1500), in: portrait) == .present(.miniPlayer))
     }
 
     @Test("expanded in landscape ignores drags")
@@ -63,18 +63,18 @@ struct PresentationStateMachineTests {
         #expect(PlayerPresentation.expanded.next(after: drag(0, 300, velocity: 0, 3000), in: landscape) == .present(.expanded))
     }
 
-    @Test("mini bar › drag up expands", arguments: miniModes)
+    @Test("mini player › drag up expands", arguments: miniModes)
     func miniDragUp(mode: PlayerPresentation) {
         #expect(mode.next(after: drag(0, -120), in: portrait) == .present(.expanded))
         #expect(mode.next(after: drag(0, -10, velocity: 0, -1500), in: portrait) == .present(.expanded))
     }
 
-    @Test("mini bar › drag down closes", arguments: miniModes)
+    @Test("mini player › drag down closes", arguments: miniModes)
     func miniDragDown(mode: PlayerPresentation) {
         #expect(mode.next(after: drag(0, 120), in: portrait) == .close)
     }
 
-    @Test("mini bar › a sideways fling closes, a small one stays", arguments: miniModes)
+    @Test("mini player › a sideways fling closes, a small one stays", arguments: miniModes)
     func miniSideways(mode: PlayerPresentation) {
         #expect(mode.next(after: drag(150, 5, velocity: 2000, 0), in: portrait) == .close)
         #expect(mode.next(after: drag(-150, 5, velocity: -2000, 0), in: portrait) == .close)
@@ -83,12 +83,12 @@ struct PresentationStateMachineTests {
         #expect(mode.next(after: drag(90, 60), in: portrait) == .present(mode))
     }
 
-    @Test("isMiniBar covers docked and every corner, nothing else")
-    func isMiniBar() {
-        for mode in miniModes { #expect(mode.isMiniBar) }
-        #expect(!PlayerPresentation.expanded.isMiniBar)
-        #expect(!PlayerPresentation.hidden.isMiniBar)
-        #expect(PlayerPresentation.miniBar.isMiniBar)
+    @Test("isMini covers docked and every corner, nothing else; the one produced is bottom-trailing")
+    func isMini() {
+        for mode in miniModes { #expect(mode.isMini) }
+        #expect(!PlayerPresentation.expanded.isMini)
+        #expect(!PlayerPresentation.hidden.isMini)
+        #expect(PlayerPresentation.miniPlayer == .mini(.bottomTrailing))
     }
 }
 
@@ -110,12 +110,17 @@ struct PresentationGeometryTests {
         #expect(approx(l.x / l.y, 16.0 / 9, 0.02))
     }
 
-    @Test("the bar sits right above the bottom nav and the safe area")
-    func barFrame() {
-        let bar = MiniPlayerGeometry.barFrame(in: portrait)
-        #expect(bar.maxY == 852 - 34 - tuning.bottomNavHeight)
-        #expect(bar.height == tuning.miniBarHeight)
-        #expect(bar.minX == 0 && bar.width == 393)
+    @Test("the mini player floats bottom-right, above the bottom nav, inside the safe area")
+    func miniFrame() {
+        let mini = MiniPlayerGeometry.miniFrame(in: portrait)
+        #expect(mini.maxY == 852 - 34 - tuning.bottomNavHeight - tuning.miniMargin)
+        #expect(mini.maxX == 393 - tuning.miniMargin)
+        #expect(mini.width == (393 * tuning.miniWidthFraction).rounded())
+        #expect(approx(mini.width / mini.height, 16.0 / 9, 0.02))
+        let l = MiniPlayerGeometry.miniFrame(in: landscape)
+        #expect(l.maxX == 852 - 59 - tuning.miniMargin)
+        #expect(l.width == (393 * tuning.miniWidthFraction).rounded(), "sized by the short side, same as portrait")
+        #expect(l.minY >= 0)
     }
 
     @Test("progress is clamped, and 0 without a usable duration")
@@ -170,27 +175,28 @@ struct PresentationLayoutTests {
         #expect(layout.hidesStatusBar)
     }
 
-    @Test("mini bar: the scaled video fills the bar's height on its left; browse stays interactive", arguments: miniModes)
-    func miniBar(mode: PlayerPresentation) {
+    @Test("mini player: the scaled video fills the floating frame; browse stays interactive", arguments: miniModes)
+    func miniPlayer(mode: PlayerPresentation) {
         for viewport in [portrait, landscape] {
             let layout = PresentationLayout.layout(for: mode, in: viewport)
-            let bar = MiniPlayerGeometry.barFrame(in: viewport)
-            #expect(layout.chrome == .miniBar)
-            #expect(layout.chromeFrame == bar)
+            let mini = MiniPlayerGeometry.miniFrame(in: viewport)
+            #expect(layout.chrome == .miniPlayer)
+            #expect(layout.chromeFrame == mini)
             #expect(layout.pageLayout == .video)
             #expect(layout.isBrowseInteractive)
             #expect(layout.browse == viewport.bounds)
             let visual = layout.playerVisualFrame
-            #expect(visual.minX == viewport.safeArea.leading)
-            #expect(visual.minY == bar.minY)
-            #expect(approx(visual.height, tuning.miniBarHeight - tuning.progressHeight, 0.01))
-            #expect(visual.width < viewport.size.x / 3)
+            #expect(visual.origin == mini.origin)
+            #expect(approx(visual.width, mini.width, 0.01))
+            #expect(approx(visual.height, mini.height, 1))
+            #expect(visual.minX > viewport.size.x / 3, "on the right side")
+            #expect(approx(layout.playerCornerRadius * layout.playerScale, tuning.miniCornerRadius))
         }
     }
 
-    @Test("all mini-bar modes share one layout, so switching between them never moves the player")
+    @Test("all mini modes share one layout, so switching between them never moves the player")
     func miniModesIdentical() {
-        let reference = PresentationLayout.layout(for: .miniBar, in: portrait)
+        let reference = PresentationLayout.layout(for: .miniPlayer, in: portrait)
         for mode in miniModes { #expect(PresentationLayout.layout(for: mode, in: portrait) == reference) }
     }
 }

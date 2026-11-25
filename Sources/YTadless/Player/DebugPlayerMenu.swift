@@ -34,7 +34,7 @@ struct DebugPlayerMenu: View {
             if session.request != nil {
                 Section("Presentation") {
                     Button("Expanded") { set(.expanded) }
-                    Button("Mini bar") { set(.miniBar) }
+                    Button("Mini player") { set(.miniPlayer) }
                     Button("Close", role: .destructive) { store.close() }
                 }
             }

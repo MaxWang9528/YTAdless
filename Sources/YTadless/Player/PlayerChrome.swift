@@ -4,9 +4,9 @@
 // - Expanded: a slim strip above the watch view with the collapse chevron, a grabber and PiP.
 //   Drag it, or the video itself (VideoSwipeDown), down — or tap the chevron — to minimize.
 //   YouTube's own controls do the rest.
-// - Mini bar: pinned above the site's bottom nav. The scaled player webview sits in its leading
-//   slot (PlayerLayoutView draws it there); this overlay leaves that slot clear and adds title,
-//   channel, play/pause, close and a progress line. Tap or drag up expands; drag down closes.
+// - Mini player: a small floating video in the bottom-right corner, above the site's bottom nav.
+//   PlayerLayoutView draws the scaled player webview there; this overlay adds close, play/pause
+//   and a progress line on top. Tap or drag up expands; drag down or fling sideways closes.
 // None of these hold a webview, so they can be created and dropped freely.
 
 import SwiftUI
@@ -47,55 +47,53 @@ struct ExpandedHeader: View {
     }
 }
 
-/// The bar's background, drawn *behind* the player webview so the video shows on top of it.
-struct MiniBarBackground: View {
+/// The mini player's shadow and backing, drawn *behind* the player webview.
+struct MiniPlayerBackground: View {
+    let cornerRadius: CGFloat
+
     var body: some View {
-        Rectangle()
-            .fill(Color(uiColor: .secondarySystemBackground))
-            .overlay(alignment: .top) { Divider() }
-            .shadow(color: .black.opacity(0.12), radius: 6, y: -2)
+        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            .fill(Color.black)
+            .shadow(color: .black.opacity(0.5), radius: 10, y: 4)
     }
 }
 
-/// The bar's controls, drawn above the player webview. `videoWidth` is the clear leading slot.
-struct MiniBarOverlay: View {
+/// The mini player's controls, drawn over the scaled video: a tap anywhere else expands.
+struct MiniPlayerOverlay: View {
     let actions: PlayerChromeActions
-    let meta: VideoMeta?
-    let videoWidth: CGFloat
     let progress: Double
     let progressHeight: CGFloat
+    let cornerRadius: CGFloat
 
     var body: some View {
-        HStack(spacing: 0) {
-            // The video slot: transparent, but it still takes the tap (expand) and the drag.
+        ZStack {
+            // Takes the tap (expand) and the drag; the page never sees them.
             Color.clear
-                .frame(width: videoWidth)
                 .contentShape(Rectangle())
                 .onTapGesture { actions.onGesture(.tap) }
+                .accessibilityElement()
+                .accessibilityLabel("Mini player")
+                .accessibilityAddTraits(.isButton)
+                .accessibilityHint("Expands the player")
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(meta?.title ?? "Loading…")
-                    .font(.subheadline.weight(.medium))
-                    .lineLimit(1)
-                if let author = meta?.author, !author.isEmpty {
-                    Text(author)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
+            // Keeps the buttons readable over a bright frame.
+            LinearGradient(colors: [.black.opacity(0.55), .clear, .clear, .black.opacity(0.45)],
+                           startPoint: .top, endPoint: .bottom)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+
+            VStack(spacing: 0) {
+                HStack(spacing: 0) {
+                    Spacer(minLength: 0)
+                    MiniButton(systemName: "xmark", label: "Close player") { actions.onGesture(.closeButton) }
+                }
+                Spacer(minLength: 0)
+                HStack(spacing: 0) {
+                    MiniButton(systemName: actions.isPlaying ? "pause.fill" : "play.fill",
+                               label: actions.isPlaying ? "Pause" : "Play", action: actions.onPlayPause)
+                    Spacer(minLength: 0)
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-            .padding(.leading, 10)
-            .contentShape(Rectangle())
-            .onTapGesture { actions.onGesture(.tap) }
-            .accessibilityElement(children: .combine)
-            .accessibilityAddTraits(.isButton)
-            .accessibilityHint("Expands the player")
-
-            ChromeButton(systemName: actions.isPlaying ? "pause.fill" : "play.fill",
-                         label: actions.isPlaying ? "Pause" : "Play", action: actions.onPlayPause)
-            ChromeButton(systemName: "xmark", label: "Close player") { actions.onGesture(.closeButton) }
-                .padding(.trailing, 4)
         }
         .overlay(alignment: .bottomLeading) {
             GeometryReader { proxy in
@@ -107,7 +105,29 @@ struct MiniBarOverlay: View {
             .allowsHitTesting(false)
             .accessibilityHidden(true)
         }
+        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        .environment(\.colorScheme, .dark)
         .accessibilityElement(children: .contain)
+    }
+}
+
+/// A small icon on the video; the hit area stays 36 pt.
+private struct MiniButton: View {
+    let systemName: String
+    let label: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: 15, weight: .bold))
+                .foregroundStyle(.white)
+                .shadow(color: .black.opacity(0.6), radius: 2)
+                .frame(width: 36, height: 36)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
     }
 }
 
