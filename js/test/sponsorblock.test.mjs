@@ -4,7 +4,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { assertClean, assertMatchesVector, commandVectors } from './harness.mjs';
-import { playerPage } from './media-fakes.mjs';
+import { playerPage, systemPause } from './media-fakes.mjs';
 
 const SCRIPTS = ['player-bridge.js', 'background.js', 'sponsorblock.js'];
 const ID = 'dQw4w9WgXcQ';  // media-fakes WATCH
@@ -119,7 +119,7 @@ test('sponsorblock.js › Undo › seeks back to the start and the segment stays
   page.document.querySelector('#movie_player').addEventListener('click', () => { bubbled += 1; });
   page.document.querySelector(TOAST + ' button').dispatchEvent(new win.MouseEvent('click', { bubbles: true }));
   assert.equal(video.currentTime, 10);
-  assert.deepEqual(intents, [{ action: 'seek', source: 'native' }]);
+  assert.deepEqual(intents, [{ action: 'seek', source: 'page' }]);
   assert.equal(bubbled, 0, 'the tap does not reach the player');
   assert.equal(page.document.querySelector(TOAST), null, 'toast hidden');
   at(10.3);
@@ -138,14 +138,27 @@ test('sponsorblock.js › toast › hides by itself after ~4 s', async (t) => {
   assertAll(page);
 });
 
-test('sponsorblock.js › skip › userIntent seek is emitted before currentTime changes', async (t) => {
+test('sponsorblock.js › skip › an automatic skip emits no userIntent', async (t) => {
   const { page, ns, send, at, video } = await sbPage(t);
   await send([SPONSOR]);
   const seen = [];
-  ns.on('userIntent', (i) => seen.push({ ...i, currentTime: video.currentTime }));
+  ns.on('userIntent', (i) => seen.push({ ...i }));
   at(12);
-  assert.deepEqual(seen, [{ action: 'seek', source: 'native', currentTime: 12 }]);
+  assert.deepEqual(seen, []);
   assert.equal(video.currentTime, 30.5);
+  assertAll(page);
+});
+
+test('sponsorblock.js › skip while locked, then a system pause › background.js still resumes it (D12)', async (t) => {
+  const { page, send, at, video, media, win } = await sbPage(t);
+  await page.cmd('lifecycle', { state: 'background' });
+  await send([SPONSOR]);
+  at(12);
+  assert.equal(video.currentTime, 30.5);
+  const plays = media(video).plays;
+  systemPause(win, video);
+  await page.flush();
+  assert.ok(media(video).plays > plays, 'the system pause right after a skip is resumed');
   assertAll(page);
 });
 

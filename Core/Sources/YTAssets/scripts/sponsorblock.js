@@ -7,8 +7,10 @@
 //            are ignored, count 0). A re-send for the same video keeps what was already skipped.
 //   listens  `videoElement` (player-bridge.js) for re-attachments; also looks the video up itself,
 //            because that event doesn't replay emissions from before this file's listener.
-//   emits    `userIntent` {action:'seek', source:'native'} right before each seek it makes, as
-//            player-bridge.js's seekTo does, so background.js treats the seek as intentional.
+//   emits    `userIntent` {action:'seek', source:'page'} before the Undo seek (a real tap), and
+//            NOT before automatic skips: a userIntent makes background.js treat a pause in the
+//            next ~1.5 s as intentional (D12), so a skip while locked could leave a system pause
+//            unresumed. An automatic skip isn't the user's intent.
 // Each segment is skipped at most once per load: seeking back into it plays it. A toast over the
 // player says what was skipped and offers Undo (seek back to the segment's start).
 (() => {
@@ -110,8 +112,8 @@
       try { return document.querySelector(CONFIG.AD_SHOWING_SELECTOR) !== null; } catch (_) { return false; }
     }
 
-    function seek(v, to) {
-      ns.emit('userIntent', { action: 'seek', source: 'native' });
+    function seek(v, to, byUser = false) {
+      if (byUser) ns.emit('userIntent', { action: 'seek', source: 'page' });
       v.currentTime = to;
     }
 
@@ -144,7 +146,7 @@
       hideToast();
       const v = currentVideo();
       if (!v) return;
-      seek(v, segment.start);
+      seek(v, segment.start, true);
       ns.log('info', SOURCE, 'undo: back to ' + segment.start + ' s; ' + segment.category + ' stays un-skipped');
     }
 
