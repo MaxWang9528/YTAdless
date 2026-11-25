@@ -147,6 +147,7 @@ final class SponsorDetectionService {
         if let sponsorBlock {
             let known = await sponsorBlock.segmentsForDetection(videoId: videoId)
             if !known.isEmpty {
+                log?.native(.info, Self.source, "\(videoId): skipped: SponsorBlock has \(known.count) segment(s)")
                 // SponsorBlock covers this video; clear any guess shown before it answered.
                 return Outcome(segments: [], cacheable: false)
             }
@@ -213,6 +214,7 @@ final class SponsorDetectionService {
         guard !Task.isCancelled else { return nil }
 
         // Model (off the main actor).
+        log?.native(.info, Self.source, "\(videoId): analysing \(track.languageCode) transcript (\(data.count) bytes)")
         let outcome: SponsorDetector.Outcome
         do {
             outcome = try await detector.detect(json3: data)

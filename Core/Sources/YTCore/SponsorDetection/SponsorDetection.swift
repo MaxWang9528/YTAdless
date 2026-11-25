@@ -127,7 +127,7 @@ public enum SponsorDetection {
         Keyword(pattern: #"\bfactor ?75?\b|\bfactor meals\b"#, note: "Factor"),
         Keyword(pattern: #"\bray ?con\b"#, note: "Raycon"),
         Keyword(pattern: #"\bopera gx\b"#, note: "Opera GX"),
-        Keyword(pattern: #"\bkeeps\b|\bhims\b"#, note: "Keeps / Hims"),
+        Keyword(pattern: #"\bkeeps (dot )?com\b|\bfor ?hims\b"#, note: "Keeps / Hims (anchored: \"keeps\" is an ordinary verb)"),
         Keyword(pattern: #"\bpatreon\b"#, note: "Patreon (self-promotion)"),
         Keyword(pattern: #"\bmerch\b"#, note: "merchandise (self-promotion)"),
     ]
