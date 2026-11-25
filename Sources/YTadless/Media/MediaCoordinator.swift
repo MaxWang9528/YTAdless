@@ -7,6 +7,7 @@
 //   WebKit pauses (D12). Decisions are MediaPolicy (YTCore), tested on Linux; this is the adapter.
 // - PiP restore (pip → inline while playing) expands the player.
 // - Coming back to the foreground re-reads `state`, so the UI matches the real playback.
+// - SponsorBlockService (created in start()) sends `sponsorSegments` after each videoMeta.
 // - Now Playing is media-session.js's job (D11): nothing here touches MPNowPlayingInfoCenter.
 //
 // Commands go out one at a time, in order, and never throw: the player may be on about:blank
@@ -29,6 +30,7 @@ final class MediaCoordinator {
     private var sendChain: Task<Void, Never>?
     private var lifecycle: AppLifecycle = .active
     private var lastPresentation: MediaPresentation = .inline
+    private var sponsorBlock: SponsorBlockService?
 
     private static let logger = Logger(subsystem: "com.example.YTadless", category: "Media")
 
@@ -48,6 +50,10 @@ final class MediaCoordinator {
         subscription = hub.subscribe { [weak self] event in
             self?.handle(event)
         }
+        // SponsorBlock (off by default): fetches segments natively, sponsorblock.js skips them.
+        sponsorBlock = SponsorBlockService(session: session, player: player, hub: hub,
+                                           log: (player as? WebViewStore)?.debugLog)
+        sponsorBlock?.start()
     }
 
     // MARK: Audio session

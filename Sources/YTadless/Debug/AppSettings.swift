@@ -9,6 +9,8 @@
 //   hideAdElements      → WebViewStore.applyContentRules (adds/removes the compiled rule lists)
 //   keepScreenAwake     → DebugEntryView sets UIApplication.isIdleTimerDisabled while playing
 //   debugButtonOffset   → DebugEntryView's vertical position
+//   sponsorBlockEnabled /
+//   sponsorBlockCategories → SponsorBlockService (Module D) observes them and re-sends segments
 // Defaults reproduce the app's behaviour before settings existed.
 
 import SwiftUI
@@ -43,6 +45,12 @@ final class AppSettings {
     var keepScreenAwake: Bool { didSet { save(keepScreenAwake, .keepScreenAwake) } }
     /// Vertical offset of the Debug button from its starting point (points).
     var debugButtonOffset: Double { didSet { save(debugButtonOffset, .debugButtonOffset) } }
+    /// Off by default: when on, a 4-char SHA-256 prefix of each video ID goes to sponsor.ajay.app.
+    var sponsorBlockEnabled: Bool { didSet { save(sponsorBlockEnabled, .sponsorBlockEnabled) } }
+    /// Enabled SponsorBlock categories, persisted as their API names.
+    var sponsorBlockCategories: Set<SponsorBlock.Category> {
+        didSet { save(SponsorBlock.Category.rawValues(sponsorBlockCategories), .sponsorBlockCategories) }
+    }
 
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private var windowObserver: NSObjectProtocol?
@@ -50,6 +58,7 @@ final class AppSettings {
     private enum Key: String {
         case appearance, miniWidthFraction, miniCornerRadius, miniMargin, showsMiniProgress, dragDistance
         case videoSwipeToMinimize, blockAdRequests, hideAdElements, keepScreenAwake, debugButtonOffset
+        case sponsorBlockEnabled, sponsorBlockCategories
         var name: String { "ytadless.settings." + rawValue }
     }
 
@@ -67,6 +76,9 @@ final class AppSettings {
         hideAdElements = Self.bool(defaults, .hideAdElements) ?? true
         keepScreenAwake = Self.bool(defaults, .keepScreenAwake) ?? false
         debugButtonOffset = Self.double(defaults, .debugButtonOffset) ?? 0
+        sponsorBlockEnabled = Self.bool(defaults, .sponsorBlockEnabled) ?? false
+        sponsorBlockCategories = defaults.stringArray(forKey: Key.sponsorBlockCategories.name)
+            .map(SponsorBlock.Category.set(fromRawValues:)) ?? SponsorBlock.Category.defaults
         // A window that appears later (a new scene) gets the current appearance too.
         windowObserver = NotificationCenter.default.addObserver(
             forName: UIWindow.didBecomeVisibleNotification, object: nil, queue: .main
@@ -96,6 +108,8 @@ final class AppSettings {
         hideAdElements = true
         keepScreenAwake = false
         debugButtonOffset = 0
+        sponsorBlockEnabled = false
+        sponsorBlockCategories = SponsorBlock.Category.defaults
     }
 
     /// Sets the style on every window of every scene. Called at launch and on change.

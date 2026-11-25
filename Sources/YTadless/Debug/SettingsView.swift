@@ -69,6 +69,18 @@ struct SettingsView: View {
                 Text("Playback")
             }
 
+            Section {
+                Toggle("Skip sponsored segments", isOn: $settings.sponsorBlockEnabled)
+                ForEach(SponsorBlock.Category.allCases) { category in
+                    Toggle(category.displayName, isOn: categoryBinding(category))
+                        .disabled(!settings.sponsorBlockEnabled)
+                }
+            } header: {
+                Text("SponsorBlock")
+            } footer: {
+                Text("Skips segments the SponsorBlock community marked (sponsor.ajay.app), with an Undo button. To look a video up, only the first 4 characters of a SHA-256 hash of its ID are sent, never the ID itself. The data is crowd-sourced and can be wrong.")
+            }
+
             Section("Pages") {
                 Button("Reload browse", systemImage: "arrow.clockwise") { store.browseWebView.reload() }
                 Button("Reload player", systemImage: "arrow.clockwise") { store.playerWebView.reload() }
@@ -99,6 +111,16 @@ struct SettingsView: View {
         store.browseWebView.reload()
         if store.playerWebView.url != nil { store.playerWebView.reload() }
         rulesChangedSinceReload = false
+    }
+
+    private func categoryBinding(_ category: SponsorBlock.Category) -> Binding<Bool> {
+        Binding(
+            get: { settings.sponsorBlockCategories.contains(category) },
+            set: { isOn in
+                if isOn { settings.sponsorBlockCategories.insert(category) }
+                else { settings.sponsorBlockCategories.remove(category) }
+            }
+        )
     }
 
     private func slider(_ title: String, value: Binding<Double>, in range: ClosedRange<Double>, step: Double,
