@@ -20,6 +20,8 @@ struct PlayerLayoutView: View {
     /// Live finger offset while dragging the header, docked bar or mini-player.
     @State private var dragOffset: CGSize = .zero
     @State private var layoutSync = PageLayoutSync()
+    /// Swipe down on the video (inside the webview) to minimize.
+    @State private var videoSwipe = VideoSwipeDown()
 
     init(store: WebViewStore, session: PlayerSession) {
         self.store = store
@@ -40,13 +42,22 @@ struct PlayerLayoutView: View {
                 .onChange(of: layout.pageLayout, initial: true) { _, pageLayout in
                     layoutSync.request(pageLayout, store: store)
                 }
+                .onChange(of: layout.chrome, initial: true) { _, chrome in
+                    videoSwipe.isActive = chrome == .header
+                }
+                .onChange(of: viewport, initial: true) { _, viewport in
+                    connectVideoSwipe(viewport: viewport)
+                }
         }
         .animation(PlayerAnimation.mode, value: presentation)
         // A drag the system cancelled never reaches onEnded; don't leave the player offset.
         .onChange(of: presentation) { dragOffset = .zero }
         .onChange(of: session.request) { layoutSync.resend(store: store) }
         .onChange(of: session.playback.meta?.videoId) { layoutSync.resend(store: store) }
-        .task { layoutSync.attach(store: store) }
+        .task {
+            layoutSync.attach(store: store)
+            videoSwipe.install(on: store.playerWebView, scrollPan: store.playerWebView.scrollView.panGestureRecognizer)
+        }
     }
 
     @ViewBuilder
@@ -142,6 +153,17 @@ struct PlayerLayoutView: View {
                 perform(.dragEnded(translation: PlanarVector(value.translation), velocity: PlanarVector(value.velocity)),
                         in: viewport)
             }
+    }
+
+    /// The video swipe feeds the same offset and state machine as the header drag.
+    private func connectVideoSwipe(viewport: PresentationViewport) {
+        videoSwipe.onChanged = { translation in dragOffset = translation }
+        videoSwipe.onEnded = { translation, velocity in
+            perform(.dragEnded(translation: PlanarVector(translation), velocity: PlanarVector(velocity)), in: viewport)
+        }
+        videoSwipe.onCancelled = {
+            withAnimation(PlayerAnimation.mode) { dragOffset = .zero }
+        }
     }
 
     /// How the finger moves the player: expanded follows downward only; the mini bar follows

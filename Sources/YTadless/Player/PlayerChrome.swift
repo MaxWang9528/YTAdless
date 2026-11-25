@@ -2,7 +2,8 @@
 //
 // Styled after the YouTube app (user decision, 2026-11-24):
 // - Expanded: a slim strip above the watch view with the collapse chevron, a grabber and PiP.
-//   Drag it down (or tap the chevron) to minimize. YouTube's own controls do the rest.
+//   Drag it, or the video itself (VideoSwipeDown), down — or tap the chevron — to minimize.
+//   YouTube's own controls do the rest.
 // - Mini bar: pinned above the site's bottom nav. The scaled player webview sits in its leading
 //   slot (PlayerLayoutView draws it there); this overlay leaves that slot clear and adds title,
 //   channel, play/pause, close and a progress line. Tap or drag up expands; drag down closes.

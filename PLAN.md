@@ -673,7 +673,7 @@ the mini bar, and C only produces `PlayerPresentation.miniBar` (= `.mini(.bottom
 | mini bar (`docked`, `mini(*)`) | the full-width 16:9 player scaled to the bar's height (so the page doesn't reflow), in the leading slot of a bar pinned above the site's bottom nav; title, channel, play/pause, close, progress line; `layout: video` | full screen |
 
 Expanded in landscape becomes a full-screen video (`layout: video`); the landscape orientations
-come from Config/Info.plist. Gestures: drag the header down (or tap the chevron) to minimize; tap
+come from Config/Info.plist. Gestures: drag the header or the video down (or tap the chevron) to minimize; tap
 the bar or drag it up to expand; drag it down or fling it sideways to `close()`.
 
 In expanded mode, YouTube's own controls are used; PiP is in the native header.
