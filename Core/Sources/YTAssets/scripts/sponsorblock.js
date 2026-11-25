@@ -65,6 +65,19 @@
       '#movie_player .ytm-progress-bar',
       '#movie_player .ytp-progress-bar',
     ],
+    // When none of those match (the case on device, 2026-11-25: "markers on fallback strip"), the
+    // bar is found by shape: among these candidates inside the player, the thinnest element at
+    // least BAR_MIN_WIDTH_FRACTION of the player wide and at most BAR_MAX_HEIGHT_PX tall is the
+    // visible track line (a slider's hit area is taller than its line). Found by geometry, so it
+    // survives class renames; the log names what it picked, so a capture isn't needed to learn it.
+    SEEK_BAR_CANDIDATES: [
+      '#movie_player [role="slider"]',
+      '#movie_player [class*="progress" i]',
+      '#movie_player [class*="scrubber" i]',
+      '#movie_player [class*="timebar" i]',
+    ],
+    BAR_MIN_WIDTH_FRACTION: 0.4,
+    BAR_MAX_HEIGHT_PX: 40,
     MARKERS_ID: 'ytadless-sponsorblock-markers',
     FALLBACK_STRIP_PX: 3,       // height of the strip along the player's bottom edge
     MARKER_OPACITY: '0.85',
@@ -127,6 +140,9 @@
     let markers = null;        // {el, host, key, fallback}
     let markersCheckedAt = -Infinity;
     let loggedMarkerHost = '';
+    // The last seek bar seen, as insets of the player's width (0–1), so the fallback strip lines
+    // up with YouTube's bar while the controls are hidden. null until a bar was measured.
+    let barInsets = null;
     const captionCache = new Map();  // videoId → normalised caption tracks from a playerResponse
 
     const finiteOr = (value, fallback) => (typeof value === 'number' && Number.isFinite(value) ? value : fallback);
@@ -348,14 +364,61 @@
       markers = null;
     }
 
-    function findSeekBar() {
+    function describe(el) {
+      const classes = typeof el.className === 'string' ? el.className.trim().split(/\s+/).filter(Boolean).slice(0, 3) : [];
+      const role = el.getAttribute && el.getAttribute('role');
+      return el.tagName.toLowerCase() + classes.map((c) => '.' + c).join('') + (role ? '[role=' + role + ']' : '');
+    }
+
+    function rectOf(el) {
+      try {
+        const r = el.getBoundingClientRect();
+        return r && Number.isFinite(r.width) && Number.isFinite(r.height) ? r : null;
+      } catch (_) { return null; }
+    }
+
+    // The visible track line, by shape (see CONFIG.SEEK_BAR_CANDIDATES).
+    function findBarByShape(player) {
+      const playerRect = player ? rectOf(player) : null;
+      if (!playerRect || !(playerRect.width > 0)) return null;
+      const seen = new Set();
+      let best = null;
+      for (const selector of CONFIG.SEEK_BAR_CANDIDATES) {
+        let list = [];
+        try { list = document.querySelectorAll(selector); } catch (_) { continue; }
+        for (const el of list) {
+          if (seen.has(el) || el.id === CONFIG.MARKERS_ID || el.closest('#' + CONFIG.MARKERS_ID) ||
+              el.closest('#' + CONFIG.TOAST_ID)) continue;
+          seen.add(el);
+          const r = rectOf(el);
+          if (!r || !(r.height > 0) || r.height > CONFIG.BAR_MAX_HEIGHT_PX ||
+              r.width < playerRect.width * CONFIG.BAR_MIN_WIDTH_FRACTION) continue;
+          if (!best || r.height < best.rect.height || (r.height === best.rect.height && r.width > best.rect.width)) {
+            best = { el, rect: r };
+          }
+        }
+      }
+      if (!best) return null;
+      return { el: best.el, selector: 'shape ' + describe(best.el), rect: best.rect, playerRect };
+    }
+
+    function findSeekBar(player) {
       for (const selector of CONFIG.SEEK_BAR_SELECTORS) {
         try {
           const found = document.querySelector(selector);
           if (found) return { el: found, selector };
         } catch (_) { /* invalid selector: try the next */ }
       }
-      return null;
+      return findBarByShape(player);
+    }
+
+    function rememberInsets(bar, player) {
+      const r = bar.rect || rectOf(bar.el);
+      const p = bar.playerRect || (player ? rectOf(player) : null);
+      if (!r || !p || !(p.width > 0) || !(r.width > 0)) return;
+      const left = Math.max(0, Math.min(0.45, (r.left - p.left) / p.width));
+      const right = Math.max(0, Math.min(0.45, (p.right - r.right) / p.width));
+      barInsets = { left, right };
     }
 
     function findPlayer() {
@@ -395,13 +458,17 @@
         removeMarkers();
         return;
       }
-      const bar = findSeekBar();
-      const host = bar ? bar.el : findPlayer();
+      const player = findPlayer();
+      const bar = findSeekBar(player);
+      if (bar) rememberInsets(bar, player);
+      const host = bar ? bar.el : player;
       if (!host) {
         removeMarkers();
         return;
       }
-      const key = real.map((s) => s.key).join(',') + '/' + suggested.map((s) => s.key).join(',') + '@' + duration;
+      const insets = bar ? null : barInsets;
+      const key = real.map((s) => s.key).join(',') + '/' + suggested.map((s) => s.key).join(',') + '@' + duration +
+        (insets ? '|' + insets.left.toFixed(4) + ',' + insets.right.toFixed(4) : '');
       if (markers && markers.host === host && markers.key === key && markers.el.parentNode === host) return;
 
       removeMarkers();
@@ -410,7 +477,9 @@
       box.id = CONFIG.MARKERS_ID;
       box.setAttribute('aria-hidden', 'true');
       Object.assign(box.style, fallback
-        ? { position: 'absolute', left: '0', right: '0', bottom: '0', height: CONFIG.FALLBACK_STRIP_PX + 'px',
+        ? { position: 'absolute', bottom: '0', height: CONFIG.FALLBACK_STRIP_PX + 'px',
+            left: insets ? (insets.left * 100).toFixed(3) + '%' : '0',
+            right: insets ? (insets.right * 100).toFixed(3) + '%' : '0',
             pointerEvents: 'none', zIndex: '2147483646' }
         : { position: 'absolute', left: '0', top: '0', width: '100%', height: '100%', pointerEvents: 'none', zIndex: '1' });
       // Real segments first (so existing consumers see them in order), then suggestions.
@@ -435,7 +504,8 @@
       host.appendChild(box);
       markers = { el: box, host, key, fallback };
 
-      const where = bar ? 'seek bar ' + bar.selector : 'fallback strip (no seek bar matched)';
+      const where = bar ? 'seek bar ' + bar.selector
+        : 'fallback strip (' + (insets ? 'aligned to the last seek bar' : 'no seek bar matched') + ')';
       if (where !== loggedMarkerHost) {
         loggedMarkerHost = where;
         ns.log('info', SOURCE, 'markers on ' + where);

@@ -324,3 +324,78 @@ test('sponsorblock.js › markers › unknown duration → nothing drawn until d
   assert.equal(parseFloat(marks(page)[0].style.left), 10);
   assertAll(page);
 });
+
+// ── markers: seek bar found by shape (device 2026-11-25: no class selector matched) ─────────────
+function rect(el, { left, top, width, height }) {
+  el.getBoundingClientRect = () => ({ left, top, width, height, right: left + width, bottom: top + height, x: left, y: top });
+}
+
+function shapedPlayer(page) {
+  const doc = page.document;
+  const player = doc.querySelector('#movie_player');
+  rect(player, { left: 0, top: 0, width: 400, height: 225 });
+  // A slider hit area (tall) around the visible line (thin, inset 12 px each side), with a
+  // played portion inside it — like mweb's bar, under class names none of the selectors know.
+  const slider = doc.createElement('div');
+  slider.setAttribute('role', 'slider');
+  slider.className = 'ytmNewScrubberHitArea';
+  rect(slider, { left: 0, top: 190, width: 400, height: 30 });
+  const line = doc.createElement('div');
+  line.className = 'ytmNewProgressLine track';
+  rect(line, { left: 12, top: 203, width: 376, height: 4 });
+  const played = doc.createElement('div');
+  played.className = 'ytmNewProgressPlayed';
+  rect(played, { left: 12, top: 203, width: 150, height: 4 });
+  line.appendChild(played);
+  slider.appendChild(line);
+  player.appendChild(slider);
+  return { player, slider, line };
+}
+
+test('sponsorblock.js › markers › unknown seek-bar classes → the thin, wide track line is found by shape', async (t) => {
+  const { page, send } = await sbPage(t);
+  const { line } = shapedPlayer(page);
+  await send([SPONSOR]);
+  const box = page.document.querySelector(MARKERS);
+  assert.equal(box.parentNode, line, 'inside the visible line, not the slider hit area or the played part');
+  assert.equal(box.style.top, '0px');
+  const log = page.posted('log').find((m) => m.source === 'sponsorblock.js' && /^markers on /.test(m.message));
+  assert.match(log.message, /seek bar shape div\.ytmNewProgressLine\.track/);
+  assertAll(page);
+});
+
+test('sponsorblock.js › markers › bar hidden later → the strip keeps the bar\'s insets', async (t) => {
+  const { page, send, at, clock } = await sbPage(t);
+  const { slider } = shapedPlayer(page);
+  await send([SPONSOR]);
+  slider.remove();  // controls hidden
+  clock.advance(1100);
+  at(1);
+  const box = page.document.querySelector(MARKERS);
+  assert.equal(box.parentNode.id, 'movie_player');
+  assert.equal(parseFloat(box.style.left), 3);   // 12 / 400
+  assert.equal(parseFloat(box.style.right), 3);
+  assert.equal(box.style.bottom, '0px');
+  assert.ok(page.posted('log').some((m) => m.source === 'sponsorblock.js' && /fallback strip \(aligned to the last seek bar\)/.test(m.message)));
+  assertAll(page);
+});
+
+test('sponsorblock.js › markers › nothing bar-shaped (too narrow or too tall) → full-width strip', async (t) => {
+  const { page, send } = await sbPage(t);
+  const doc = page.document;
+  const player = doc.querySelector('#movie_player');
+  rect(player, { left: 0, top: 0, width: 400, height: 225 });
+  const narrow = doc.createElement('div');
+  narrow.className = 'progress-chip';
+  rect(narrow, { left: 0, top: 0, width: 80, height: 4 });
+  const tall = doc.createElement('div');
+  tall.setAttribute('role', 'slider');
+  rect(tall, { left: 0, top: 0, width: 400, height: 120 });
+  player.append(narrow, tall);
+  await send([SPONSOR]);
+  const box = page.document.querySelector(MARKERS);
+  assert.equal(box.parentNode, player);
+  assert.equal(box.style.left, '0px');
+  assert.equal(box.style.right, '0px');
+  assertAll(page);
+});
