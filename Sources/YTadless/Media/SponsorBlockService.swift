@@ -11,6 +11,8 @@
 // - Settings changes (including Reset to defaults) are observed with withObservationTracking:
 //   off → empty segments for the current video; on / categories changed → fetch and send.
 // - Live videos are skipped. Failures go to the Debug log, never crash.
+// - `segmentsForDetection` lets SponsorDetectionService (on-device AI) run only when SponsorBlock
+//   has nothing for the video; it shares this cache and in-flight requests.
 
 import CryptoKit
 import Foundation
@@ -122,22 +124,43 @@ final class SponsorBlockService {
             send(videoId: videoId, segments: cached)
             return
         }
-        let task = inFlight[key] ?? Task { [weak self] in
-            await self?.fetch(videoId: videoId, categories: categories)
-        }
-        inFlight[key] = task
         Task { [weak self] in
-            let segments = await task.value
-            guard let self else { return }
-            self.inFlight[key] = nil
-            guard let segments else { return }
-            self.store(segments, for: key)
+            guard let segments = await self?.lookup(videoId: videoId, categories: categories), let self else { return }
             // Still the same video and settings? (The user may have moved on while we fetched.)
             guard self.current?.videoId == videoId, self.settings.sponsorBlockEnabled,
                   self.settings.sponsorBlockCategories == categories
             else { return }
             self.send(videoId: videoId, segments: segments)
         }
+    }
+
+    /// SponsorBlock's segments for `videoId` under the current settings, for on-device detection
+    /// (SponsorDetectionService runs only when this is empty). [] when SponsorBlock is off or has
+    /// no categories, when the video has no segments, and when the lookup failed (so the guess
+    /// can still help offline-ish cases; the failure is logged). Shares the cache and any
+    /// in-flight request with the normal path, so it never fetches twice.
+    func segmentsForDetection(videoId: String) async -> [SkipSegment] {
+        let categories = settings.sponsorBlockCategories
+        guard settings.sponsorBlockEnabled, !categories.isEmpty else { return [] }
+        return await lookup(videoId: videoId, categories: categories) ?? []
+    }
+
+    /// Cached segments, else the in-flight request's, else a new fetch (stored on success).
+    /// nil on failure.
+    private func lookup(videoId: String, categories: Set<SponsorBlock.Category>) async -> [SkipSegment]? {
+        let key = Self.key(videoId, categories)
+        if let cached = cache[key] {
+            touch(key)
+            return cached
+        }
+        let task = inFlight[key] ?? Task { [weak self] in
+            await self?.fetch(videoId: videoId, categories: categories)
+        }
+        inFlight[key] = task
+        let segments = await task.value
+        inFlight[key] = nil
+        if let segments { store(segments, for: key) }
+        return segments
     }
 
     /// nil on failure (logged); [] when the video has no segments.

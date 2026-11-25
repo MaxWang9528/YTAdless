@@ -11,6 +11,7 @@
 //   debugButtonOffset   → DebugEntryView's vertical position
 //   sponsorBlockEnabled /
 //   sponsorBlockCategories → SponsorBlockService (Module D) observes them and re-sends segments
+//   aiSponsorDetection  → SponsorDetectionService (Module D): on-device guesses when SponsorBlock has none
 // Defaults reproduce the app's behaviour before settings existed.
 
 import SwiftUI
@@ -51,6 +52,9 @@ final class AppSettings {
     var sponsorBlockCategories: Set<SponsorBlock.Category> {
         didSet { save(SponsorBlock.Category.rawValues(sponsorBlockCategories), .sponsorBlockCategories) }
     }
+    /// Off by default: when on, the transcript of a video SponsorBlock has nothing for is analysed
+    /// on the iPhone (Apple Intelligence) and likely sponsor reads are suggested, never auto-skipped.
+    var aiSponsorDetection: Bool { didSet { save(aiSponsorDetection, .aiSponsorDetection) } }
 
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private var windowObserver: NSObjectProtocol?
@@ -58,7 +62,7 @@ final class AppSettings {
     private enum Key: String {
         case appearance, miniWidthFraction, miniCornerRadius, miniMargin, showsMiniProgress, dragDistance
         case videoSwipeToMinimize, blockAdRequests, hideAdElements, keepScreenAwake, debugButtonOffset
-        case sponsorBlockEnabled, sponsorBlockCategories
+        case sponsorBlockEnabled, sponsorBlockCategories, aiSponsorDetection
         var name: String { "ytadless.settings." + rawValue }
     }
 
@@ -79,6 +83,7 @@ final class AppSettings {
         sponsorBlockEnabled = Self.bool(defaults, .sponsorBlockEnabled) ?? false
         sponsorBlockCategories = defaults.stringArray(forKey: Key.sponsorBlockCategories.name)
             .map(SponsorBlock.Category.set(fromRawValues:)) ?? SponsorBlock.Category.defaults
+        aiSponsorDetection = Self.bool(defaults, .aiSponsorDetection) ?? false
         // A window that appears later (a new scene) gets the current appearance too.
         windowObserver = NotificationCenter.default.addObserver(
             forName: UIWindow.didBecomeVisibleNotification, object: nil, queue: .main
@@ -110,6 +115,7 @@ final class AppSettings {
         debugButtonOffset = 0
         sponsorBlockEnabled = false
         sponsorBlockCategories = SponsorBlock.Category.defaults
+        aiSponsorDetection = false
     }
 
     /// Sets the style on every window of every scene. Called at launch and on change.
