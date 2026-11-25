@@ -19,6 +19,10 @@ function hydrate(document) {
   const app = document.querySelector('ytm-app');
   app.insertAdjacentHTML('afterbegin', '<ytm-mobile-topbar-renderer></ytm-mobile-topbar-renderer>');
   app.insertAdjacentHTML('beforeend', '<ytm-pivot-bar-renderer></ytm-pivot-bar-renderer>');
+  // The related-videos chip row and its slot (mweb c3 CSS, fetched 2026-11-25; rendered from the
+  // watch-next response, so not in the server HTML).
+  app.insertAdjacentHTML('beforeend', '<div class="related-chips-slot-wrapper"><ytm-related-chip-cloud-renderer>'
+    + '<ytm-chip-cloud-renderer></ytm-chip-cloud-renderer></ytm-related-chip-cloud-renderer></div>');
 }
 
 async function layoutPage(t, options = {}) {
@@ -148,10 +152,13 @@ test(`layout.js › ${FIXTURE} › every stylesheet selector is valid and matche
   await page.cmd('layout', { mode: 'video' });
   const sheet = styles(page)[0].sheet;
   assert.ok(sheet.cssRules.length >= 6);
-  for (const rule of sheet.cssRules) {
+  const rules = [...sheet.cssRules].flatMap((rule) => rule.selectorText ? [rule] : [...(rule.cssRules ?? [])]);
+  for (const rule of rules) {
     for (const selector of rule.selectorText.split(',').map((s) => s.trim())) {
       // Added at runtime to rows mweb makes sticky (tested below); the fixture has none.
       if (selector.includes('ytadless-unstuck')) continue;
+      // Only while the watch view is scrolled (tested below).
+      if (selector.includes('ytadless-watch-collapsed') || selector.includes('ytadless-collapsed-bar')) continue;
       let matches;
       assert.doesNotThrow(() => { matches = page.document.querySelectorAll(selector); }, selector);
       assert.ok(matches.length > 0, `${selector} matches the hydrated fixture`);
@@ -267,4 +274,120 @@ test(`layout.js › ${FIXTURE} › un-sticks rows mweb laid out under its fixed 
   await new Promise((resolve) => setTimeout(resolve, 500));
   assert.equal(document.getElementById('later').classList.contains('ytadless-unstuck'), false);
   assertClean(page, 'unstick');
+});
+
+test(`layout.js › ${FIXTURE} › the watch view hides mweb's floating related-chips bar`, async (t) => {
+  const page = await layoutPage(t);
+  const { document, window } = page;
+  // mweb's own rules (c3 CSS, fetched 2026-11-25), in the state its JS puts them in on scroll.
+  const mweb = document.createElement('style');
+  mweb.textContent = 'ytm-related-chip-cloud-renderer{position:sticky;top:calc(56.25vw + 96px);display:block;height:0;opacity:0}'
+    + 'ytm-related-chip-cloud-renderer.chips-visible{opacity:1;top:96px;transform:translateY(-48px)}'
+    + 'ytm-related-chip-cloud-renderer.chips-fixed-positioning{position:fixed;left:0;right:0}'
+    + '.related-chips-slot-wrapper.slot-open{transform:translateY(-48px)}';
+  document.head.insertBefore(mweb, document.head.firstChild);
+  document.querySelector('ytm-related-chip-cloud-renderer').classList.add('chips-visible', 'chips-fixed-positioning');
+  document.querySelector('.related-chips-slot-wrapper').classList.add('slot-open');
+  const css = (selector) => window.getComputedStyle(document.querySelector(selector));
+  assert.equal(css('ytm-related-chip-cloud-renderer').display, 'none');
+  assert.equal(css('.related-chips-slot-wrapper').transform, 'none', 'the list does not jump up 48px');
+  assertClean(page, 'chips');
+});
+
+const COLLAPSE_CLASS = 'ytadless-watch-collapsed';
+const isCollapsed = (page) => page.document.documentElement.classList.contains(COLLAPSE_CLASS);
+
+// jsdom has no layout: the placeholder measures 0, so the video height is innerWidth × 9/16.
+async function scrollPage(page, y) {
+  Object.defineProperty(page.window, 'scrollY', { configurable: true, value: y });
+  page.window.dispatchEvent(new page.window.Event('scroll'));
+  await page.flush();
+}
+
+test(`layout.js › ${FIXTURE} › scrolling past the video collapses it into a bar at the top, and back`, async (t) => {
+  const page = await layoutPage(t);
+  const { document, window } = page;
+  document.title = 'Never Gonna Give You Up - YouTube';
+  const at = window.innerWidth * 9 / 16 - 64;
+  const css = (selector) => window.getComputedStyle(document.querySelector(selector));
+
+  await scrollPage(page, at - 1);
+  assert.equal(isCollapsed(page), false, 'more than the bar height of video still on screen');
+  assert.equal(css('#player-container-id').position, 'absolute');
+
+  await scrollPage(page, at);
+  assert.equal(isCollapsed(page), true);
+  assert.equal(css('#player-container-id').position, 'fixed');
+  assert.equal(css('#player-container-id').top, '0px');
+  assert.equal(css('#player-container-id').height, '64px');
+  assert.equal(css('#player').width, '114px', '16:9 at the bar height');
+  assert.equal(css('#player').height, '64px');
+  assert.equal(css('#player').paddingBottom, '0px');
+  assert.equal(css('video').width, '100%', 'beats the player inline size');
+  assert.equal(css('#player-control-container').display, 'none');
+  const bar = document.getElementById('ytadless-collapsed-bar');
+  assert.ok(bar, 'bar created');
+  assert.equal(bar.parentNode, document.getElementById('player-container-id'), 'inside the container, next to #player');
+  assert.equal(css('#ytadless-collapsed-bar').display, 'flex');
+  assert.equal(bar.querySelector('.ytadless-bar-title').textContent, 'Never Gonna Give You Up');
+  assert.equal(document.querySelector('video').parentNode.className, 'html5-video-container', 'the video element never moves');
+
+  await scrollPage(page, at - 10);
+  assert.equal(isCollapsed(page), true, 'hysteresis: a small scroll back keeps the bar');
+  await scrollPage(page, at - 25);
+  assert.equal(isCollapsed(page), false, 'expanded again');
+  assert.equal(css('#player-container-id').position, 'absolute');
+  assert.equal(css('#ytadless-collapsed-bar').display, 'none');
+
+  // Video mode (mini player, landscape) never collapses; the full-viewport rules win.
+  await scrollPage(page, at + 100);
+  assert.equal(isCollapsed(page), true);
+  await page.cmd('layout', { mode: 'video' });
+  assert.equal(isCollapsed(page), false);
+  assert.equal(css('#player-container-id').height, '100%');
+  await page.cmd('layout', { mode: 'page' });
+  assert.equal(isCollapsed(page), true, 'back to page while scrolled: collapsed again');
+  assertClean(page, 'collapse');
+  assertAllMatchVectors(page);
+});
+
+test(`layout.js › ${FIXTURE} › the collapsed bar's video area expands and its button plays and pauses`, async (t) => {
+  const page = await layoutPage(t);
+  const { document, window } = page;
+  const scrolls = [];
+  window.scrollTo = (arg) => scrolls.push(arg);
+  const calls = [];
+  const player = document.getElementById('movie_player');
+  player.playVideo = () => calls.push('play');
+  player.pauseVideo = () => calls.push('pause');
+  const video = document.querySelector('video');
+  let paused = true;
+  Object.defineProperty(video, 'paused', { configurable: true, get: () => paused });
+
+  await scrollPage(page, 2000);
+  const bar = document.getElementById('ytadless-collapsed-bar');
+  const button = bar.querySelector('.ytadless-bar-play');
+  assert.equal(button.getAttribute('aria-label'), 'Play');
+  button.click();
+  assert.deepEqual(calls, ['play']);
+  paused = false;
+  video.dispatchEvent(new window.Event('playing'));
+  assert.equal(button.getAttribute('aria-label'), 'Pause', 'follows the video');
+  button.click();
+  assert.deepEqual(calls, ['play', 'pause']);
+
+  bar.querySelector('.ytadless-bar-expand').click();
+  bar.querySelector('.ytadless-bar-title').click();
+  assert.equal(scrolls.length, 2);
+  assert.equal(scrolls[0].top, 0);
+  assertClean(page, 'bar taps');
+});
+
+test('layout.js › bare page › scrolling with no player never collapses', async (t) => {
+  const page = await createPage({ role: 'player', url: WATCH, scripts: ['layout.js'] });
+  t.after(() => page.close());
+  await scrollPage(page, 5000);
+  assert.equal(isCollapsed(page), false);
+  assert.equal(page.document.getElementById('ytadless-collapsed-bar'), null);
+  assertClean(page, 'bare scroll');
 });
