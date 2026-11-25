@@ -819,6 +819,23 @@ ignores `HTMLMediaElement.volume`, and Web Audio risks breaking background audio
   selectors are unverified on device. If none matches, a 3 px strip along the bottom of the
   player shows them instead, and the log says which one was used.
 
+**On-device sponsor detection** (off by default; Debug › Settings, under SponsorBlock).
+- It runs only when SponsorBlock is off, finds nothing, or fails for a video.
+- `SponsorDetectionService` (Media/) sends `captionTracks` and picks an English track
+  (`YTCore/SponsorDetection` `Captions`: manual first, then auto-captions). It fetches the signed
+  `baseUrl` with `fmt=json3` straight away (anonymous URLSession) and parses it into cues.
+- The cues are cut into windows of about 6,000 characters with 20 s of overlap. A keyword
+  prefilter (about 45 commented regexes) passes only windows that look like ad reads.
+- `SponsorDetector` sends each passing window to Apple's on-device model (FoundationModels).
+  - Each window gets a fresh session and a `DynamicGenerationSchema` answer. `@Generable` is
+    not used: its macro plugin is missing on Linux.
+  - Answers are validated, snapped to cues and merged in YTCore.
+- The result is sent as `suggestedSegments`. These are striped marks with a "Possible sponsor ·
+  Skip" prompt, and they are never skipped automatically.
+- Results are cached per video. Failures, empty transcripts (a possible PO token requirement)
+  and an unavailable model are not cached.
+- The Debug log shows one "AI: …" summary per video (source `SponsorAI`).
+
 ## 7. Testing strategy (details and commands in CLAUDE.md)
 
 | tier | runs where | covers |
