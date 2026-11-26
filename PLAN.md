@@ -214,6 +214,7 @@ the Node tests compare against.
 | `playback` | `status, position, duration?, rate, videoId?` | player-bridge.js (~1 Hz while playing, plus on every change) | `PlaybackState` |
 | `presentation` | `mode: 'inline'\|'pip'\|'fullscreen'` | player-bridge.js | `PlaybackState`; D (PiP restore → expand) |
 | `selectTab` | `tab: 'home'\|'subscriptions'\|'you'` | router.js (browse) | B: `WebViewStore.showTab` (§6.2 "Browse tabs"; added 2026-11-25, user-approved) |
+| `fullscreenRequest` | `enter: boolean` | player-bridge.js (instead of WebKit video full screen) | C: `AppFullscreenController` rotates to the expanded landscape layout; enter while landscape = exit (added 2026-11-25, **pending user approval**) |
 
 **Decoding** (`BridgeMessage.decode`). `isValidJSONObject` runs first, because on Darwin
 `JSONSerialization.data` raises an Objective-C exception (a crash) on NaN. The decoder then uses
@@ -772,6 +773,11 @@ against YouTube.
 `video.webkitSetPresentationMode('picture-in-picture')`, falling back to `requestPictureInPicture()`.
 
 **PiP** (D13). Two entry points: C's button, or WebKit fullscreen followed by swipe home.
+*Since 2026-11-25 (pending approval):* YouTube's fullscreen button no longer reaches WebKit's
+video full screen. player-bridge.js wraps `video.webkitEnterFullscreen` (and the element/standard
+variants on anything holding the video) and posts `fullscreenRequest`; native rotates to the
+expanded landscape layout so in-page UI (the SponsorBlock Skip button) stays visible. Cost: the
+"fullscreen + swipe home → PiP" entry point is gone; PiP is the button only.
 Restoring from PiP (`presentation` inline, still playing) makes MediaCoordinator set
 `presentation = .expanded`.
 

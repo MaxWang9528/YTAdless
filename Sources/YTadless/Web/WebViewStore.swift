@@ -265,6 +265,8 @@ final class WebViewStore: PlayerControlling {
             refreshPlayerState(reason: "ready")
         case .selectTab(let tab) where event.role == .browse:
             showTab(tab, reason: "tap")
+        case .fullscreenRequest(let enter) where event.role == .player:
+            AppFullscreenController.handle(enter: enter, session: session, log: debugLog)
         default:
             break
         }

@@ -27,6 +27,9 @@ public enum BridgeMessage: Equatable, Sendable {
     case presentation(MediaPresentation)
     /// router.js (browse): show another bottom-nav tab's webview (PLAN.md §6.2 "Browse tabs").
     case selectTab(BrowseTab)
+    /// player-bridge.js: the page asked for full screen (`enter`) or to leave it; native uses its
+    /// own landscape layout instead of WebKit's video full screen (PLAN.md §5.3, AppFullscreen).
+    case fullscreenRequest(enter: Bool)
     /// A well-formed message whose `type` this build doesn't know. Native code logs and ignores it.
     case unknown(type: String)
 
@@ -43,6 +46,7 @@ public enum BridgeMessage: Equatable, Sendable {
         case .playback: "playback"
         case .presentation: "presentation"
         case .selectTab: "selectTab"
+        case .fullscreenRequest: "fullscreenRequest"
         case .unknown(let type): type
         }
     }

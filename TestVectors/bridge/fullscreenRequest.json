@@ -1,0 +1,7 @@
+{
+  "type": "fullscreenRequest",
+  "description": "player-bridge.js, instead of WebKit video full screen: YouTube's player called webkitEnterFullscreen/requestFullscreen (enter true) or an exit variant (enter false). Native rotates to its own landscape layout, where the page (and the SponsorBlock Skip button) stays visible; enter while already landscape means exit, since the page's button never leaves 'enter'.",
+  "optional": [],
+  "enums": {},
+  "body": { "v": 1, "type": "fullscreenRequest", "frame": "main", "enter": true }
+}

@@ -63,6 +63,9 @@
     TOAST_MS: 4000,
     TOAST_INSET_PX: 12,         // from the player's left edge
     TOAST_BOTTOM_PX: 48,        // above the player's bottom edge (clear of the seek bar)
+    // Extra left margin so the toast clears the notch / Dynamic Island in the app's landscape full
+    // screen (the page sets viewport-fit=cover, fixtures/html/*; 0 in portrait).
+    TOAST_SAFE_MARGIN: 'env(safe-area-inset-left, 0px)',
     // Seek bar the markers go in, first match wins. mweb class names as of 2024–2026 (the
     // SponsorBlock extension's mobile selectors and YouTube's shared progress bar); NOT in a
     // fixture and unverified on device (2026-11-25): Debug › Capture a watch page to confirm.
@@ -390,6 +393,7 @@
       box.setAttribute('role', 'status');
       Object.assign(box.style, {
         position: 'fixed', left: '12px', bottom: '48px', zIndex: '2147483647', touchAction: 'manipulation',
+        marginLeft: CONFIG.TOAST_SAFE_MARGIN,
         display: 'flex', alignItems: 'center', gap: '12px', padding: '8px 12px', borderRadius: '8px',
         background: 'rgba(0,0,0,0.8)', color: '#fff', font: '14px/1.3 -apple-system, sans-serif',
         pointerEvents: 'auto', boxSizing: 'border-box',

@@ -8,6 +8,7 @@
 //           YouTube's controls). A page call without a gesture (for example YouTube's own
 //           background gating) is not intent, so background.js may reverse it.
 //   handles commands play · pause · seek {to} · seekBy {delta} · pip {enter} · state
+//   posts   `fullscreenRequest` {enter} instead of WebKit video full screen (app full screen).
 // videoMeta comes from the `playerResponse` event (hooks.js, Module A); ytInitialPlayerResponse
 // and then the DOM are fallbacks.
 //
@@ -40,6 +41,20 @@
     PIP_STORAGE_KEY: 'ytadless.pipFallback',  // localStorage '1' once the fallback was needed
     // Where the button goes: the mweb player container (2026-11 DOM; unverified on device).
     PIP_CONTAINER_SELECTORS: ['#movie_player', '#player-container-id', '#player'],
+    // App full screen (user request 2026-11-25: the Skip button must show in full screen). WebKit's
+    // own video full screen is an AVKit view the page can't draw over, so the player's fullscreen
+    // calls become a `fullscreenRequest` and native rotates to its landscape layout, where the page
+    // (and sponsorblock.js's Skip toast) is still on screen. On iPhone WKWebView has no element
+    // fullscreen (`document.webkitFullscreenEnabled` false), so YouTube's html5 player falls back to
+    // `video.webkitEnterFullscreen()` (WebKit HTMLVideoElement API; player base.js, 2026-11). The
+    // element and standard variants are wrapped too, in case a later player or WebKit enables them.
+    // Unverified on device: no fixture holds the player's fullscreen code path.
+    FULLSCREEN_VIDEO_ENTER: ['webkitEnterFullscreen', 'webkitEnterFullScreen'],
+    FULLSCREEN_VIDEO_EXIT: ['webkitExitFullscreen', 'webkitExitFullScreen'],
+    FULLSCREEN_ELEMENT_ENTER: ['requestFullscreen', 'webkitRequestFullscreen', 'webkitRequestFullScreen'],
+    FULLSCREEN_DOCUMENT_EXIT: ['exitFullscreen', 'webkitExitFullscreen', 'webkitCancelFullScreen'],
+    // Players often try several variants for one tap: one request per this window.
+    FULLSCREEN_DEBOUNCE_MS: 600,
   });
 
   const ns = window.__ytadless;
@@ -255,6 +270,60 @@
       notePageCall(this, 'pause');
       return origPause.apply(this, arguments);
     };
+
+    // ── app full screen instead of WebKit's (see CONFIG.FULLSCREEN_*) ───────────────────────
+    // The page never enters WebKit full screen, so YouTube's button keeps offering "enter" while
+    // the app is in its landscape layout: native treats enter-while-landscape as exit (§5.3).
+    let lastFullscreenAt = -Infinity;
+    function requestAppFullscreen(enter, how) {
+      ns.guard(SOURCE, () => {
+        if (now() - lastFullscreenAt < CONFIG.FULLSCREEN_DEBOUNCE_MS) return;
+        lastFullscreenAt = now();
+        ns.log('info', SOURCE, 'fullscreen: ' + how + ' → app full screen ' + (enter ? 'enter' : 'exit'));
+        ns.post('fullscreenRequest', { enter });
+      });
+    }
+    // An element "holds the player" if it is or contains the main video (or any video, before
+    // the main one is known).
+    function holdsPlayer(el) {
+      try {
+        if (!el || typeof el.contains !== 'function') return false;
+        const v = video || document.querySelector('video');
+        return !!v && (el === v || el.contains(v));
+      } catch (_) { return false; }
+    }
+    function wrapMethod(proto, name, replacement) {
+      const orig = proto && Object.prototype.hasOwnProperty.call(proto, name) ? proto[name] : undefined;
+      // Only names WebKit has, so the player's feature detection sees what it would without us.
+      if (typeof orig !== 'function') return;
+      proto[name] = function () { return replacement.call(this, orig, arguments); };
+    }
+    const VideoProto = typeof HTMLVideoElement === 'function' ? HTMLVideoElement.prototype : null;
+    for (const name of CONFIG.FULLSCREEN_VIDEO_ENTER) {
+      wrapMethod(VideoProto, name, function () { requestAppFullscreen(true, 'video.' + name); });
+    }
+    for (const name of CONFIG.FULLSCREEN_VIDEO_EXIT) {
+      wrapMethod(VideoProto, name, function (orig, args) {
+        if (this.webkitDisplayingFullscreen === true) return orig.apply(this, args);  // a real one (e.g. iOS restored it)
+        requestAppFullscreen(false, 'video.' + name);
+      });
+    }
+    const ElementProto = typeof Element === 'function' ? Element.prototype : null;
+    for (const name of CONFIG.FULLSCREEN_ELEMENT_ENTER) {
+      wrapMethod(ElementProto, name, function (orig, args) {
+        if (!holdsPlayer(this)) return orig.apply(this, args);
+        requestAppFullscreen(true, 'element.' + name);
+        return name === 'requestFullscreen' ? Promise.resolve() : undefined;
+      });
+    }
+    const DocumentProto = typeof Document === 'function' ? Document.prototype : null;
+    for (const name of CONFIG.FULLSCREEN_DOCUMENT_EXIT) {
+      wrapMethod(DocumentProto, name, function (orig, args) {
+        if (this.fullscreenElement || this.webkitFullscreenElement) return orig.apply(this, args);
+        requestAppFullscreen(false, 'document.' + name);
+        return name === 'exitFullscreen' ? Promise.resolve() : undefined;
+      });
+    }
 
     // ── in-page PiP button (D13 fallback) ───────────────────────────────────────────────────
     let pipButton = null;

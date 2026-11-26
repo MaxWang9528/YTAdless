@@ -21,6 +21,7 @@ enum BridgeDecoder {
     private struct FilterHit: Decodable { let rule: String; let count: Int }
     private struct Presentation: Decodable { let mode: MediaPresentation }
     private struct SelectTab: Decodable { let tab: BrowseTab }
+    private struct FullscreenRequest: Decodable { let enter: Bool }
 
     static func decode(_ body: Any) throws -> (message: BridgeMessage, isMainFrame: Bool) {
         guard body is [String: Any] || body is NSDictionary,
@@ -79,6 +80,8 @@ enum BridgeDecoder {
             message = .presentation(try payload(Presentation.self).mode)
         case "selectTab":
             message = .selectTab(try payload(SelectTab.self).tab)
+        case "fullscreenRequest":
+            message = .fullscreenRequest(enter: try payload(FullscreenRequest.self).enter)
         default:
             message = .unknown(type: type)
         }

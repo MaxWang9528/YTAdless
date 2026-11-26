@@ -325,3 +325,61 @@ test('player-bridge.js › pip fallback › once needed, the button is placed on
   assert.ok(page.document.querySelector('#movie_player > #ytadless-pip-button'), 're-placed');
   assertClean(page);
 });
+
+// ── app full screen (CONFIG.FULLSCREEN_*) ────────────────────────────────────────────────────
+// jsdom has no fullscreen API: give it WebKit's names, recording calls that reach the originals.
+function installFullscreenFakes(win) {
+  const reached = [];
+  win.HTMLVideoElement.prototype.webkitEnterFullscreen = function () { reached.push('webkitEnterFullscreen'); };
+  win.HTMLVideoElement.prototype.webkitExitFullscreen = function () { reached.push('webkitExitFullscreen'); };
+  win.Element.prototype.requestFullscreen = function () { reached.push('requestFullscreen'); return win.Promise.resolve(); };
+  win.Document.prototype.exitFullscreen = function () { reached.push('exitFullscreen'); return win.Promise.resolve(); };
+  return reached;
+}
+
+async function fullscreenPage(t) {
+  let reached;
+  const { page, addVideo, ...rest } = await playerPage(t, {
+    beforeScripts: (win) => { installMediaFakes(win); reached = installFullscreenFakes(win); },
+  });
+  const video = await addVideo();
+  return { page, video, reached: () => reached, requests: () => page.posted('fullscreenRequest').map((m) => m.enter), ...rest };
+}
+
+test('player-bridge.js › fullscreen › video.webkitEnterFullscreen posts fullscreenRequest{enter:true} and never reaches WebKit', async (t) => {
+  const { page, video, reached, requests } = await fullscreenPage(t);
+  video.webkitEnterFullscreen();
+  assert.deepEqual(requests(), [true]);
+  assert.deepEqual(reached(), [], 'WebKit video full screen is not entered');
+  assertAllMatchVectors(page);
+  assertClean(page, 'fullscreen');
+});
+
+test('player-bridge.js › fullscreen › requestFullscreen on the player container is the app full screen; other elements are untouched', async (t) => {
+  const { page, reached, requests } = await fullscreenPage(t);
+  const result = page.document.getElementById('movie_player').requestFullscreen();
+  assert.equal(typeof result.then, 'function', 'still returns a promise');
+  assert.deepEqual(requests(), [true]);
+  await page.flush(700);
+  const other = page.document.createElement('div');
+  page.document.body.appendChild(other);
+  other.requestFullscreen();
+  assert.deepEqual(requests(), [true], 'an element without the video is not the player');
+  assert.deepEqual(reached(), ['requestFullscreen']);
+  assertClean(page, 'element fullscreen');
+});
+
+test('player-bridge.js › fullscreen › variants tried for one tap post one request; exits post enter:false', async (t) => {
+  const { page, video, requests } = await fullscreenPage(t);
+  page.document.getElementById('movie_player').requestFullscreen();
+  video.webkitEnterFullscreen();
+  assert.deepEqual(requests(), [true], 'debounced');
+  await page.flush(700);
+  page.document.exitFullscreen();
+  assert.deepEqual(requests(), [true, false]);
+  await page.flush(700);
+  video.webkitExitFullscreen();
+  assert.deepEqual(requests(), [true, false, false]);
+  assertAllMatchVectors(page);
+  assertClean(page, 'exits');
+});

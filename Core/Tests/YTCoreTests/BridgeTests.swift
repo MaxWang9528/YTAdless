@@ -36,11 +36,13 @@ struct BridgeDecodeTests {
         ),
         "presentation": (.presentation(.pip), true, nil),
         "selectTab": (.selectTab(.subscriptions), true, nil),
+        "fullscreenRequest": (.fullscreenRequest(enter: true), true, nil),
         "unknown": (.unknown(type: "futureThing"), true, nil),
     ]
 
     static let knownTypes = ["ready", "log", "scriptError", "route", "pageChanged", "filterHit",
-                             "videoMeta", "playback", "presentation", "selectTab"]
+                             "videoMeta", "playback", "presentation", "selectTab",
+                             "fullscreenRequest"]
 
     @Test("every vector file has an expectation, and every message type has a vector")
     func vectorFilesMatchExpectations() throws {
