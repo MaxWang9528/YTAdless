@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- "release-testing" is Xcode's current name for ad-hoc distribution. -->
+	<key>method</key>
+	<string>release-testing</string>
+	<key>teamID</key>
+	<string>4X776PJ9B2</string>
+	<key>signingStyle</key>
+	<string>manual</string>
+	<key>signingCertificate</key>
+	<string>Apple Distribution</string>
+	<key>provisioningProfiles</key>
+	<dict>
+		<key>com.cloudgravity.maxsyta</key>
+		<string>adhoc-youtube-without-ads</string>
+	</dict>
+	<key>thinning</key>
+	<string>&lt;none&gt;</string>
+	<key>stripSwiftSymbols</key>
+	<true/>
+</dict>
+</plist>
