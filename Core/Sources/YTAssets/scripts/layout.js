@@ -78,6 +78,15 @@
     // (same CSS) shifts the list up while the chips show; neutralised so nothing jumps.
     WATCH_HIDE_CHIPS: ['ytm-related-chip-cloud-renderer'],
     WATCH_CHIPS_SLOT: '.related-chips-slot-wrapper',
+    // Comments / description panels. mweb CSS (ytmweb c3_base, fetched 2026-11-25), portrait:
+    // `ytm-engagement-panel{position:fixed;…;top:calc(56.25vw + 48px)}`, i.e. under its 48px top
+    // bar and the video. The watch view has no top bar, so the panel sits at the video's bottom.
+    // `.engagement-panel-section-list-background.at-top{overflow-y:auto}`: the list only scrolls
+    // once mweb's drag code adds `at-top`, which with our geometry happened only after nudging the
+    // drag handle (device, 2026-11-25: "can't scroll comments until I jiggle the pull-down bar").
+    WATCH_PANEL: 'ytm-engagement-panel:not(.is-shorts-style):not(.force-fullscreen)',
+    WATCH_PANEL_TOP: '56.25vw',
+    WATCH_PANEL_SCROLLERS: ['.engagement-panel-section-list-background', '.engagement-panel-content-wrapper'],
     // Collapsed bar. Height in CSS px; the video in it is 16:9 at that height. Collapses once the
     // page has scrolled so less than COLLAPSED_HEIGHT of the video would be left on screen, and
     // expands again HYSTERESIS px earlier so a small scroll back doesn't flicker it.
@@ -131,6 +140,9 @@
       `${watch('.' + CONFIG.UNSTICK_CLASS)} { position: static !important; top: auto !important; }`,
       `${CONFIG.WATCH_HIDE_CHIPS.map(watch).join(',\n')} { display: none !important; }`,
       `${watch(CONFIG.WATCH_CHIPS_SLOT)} { transform: none !important; }`,
+      `${watch(CONFIG.WATCH_PANEL)} { top: ${CONFIG.WATCH_PANEL_TOP} !important; }`,
+      `${CONFIG.WATCH_PANEL_SCROLLERS.map(watch).join(',\n')} { overflow-y: auto !important;` +
+        ' -webkit-overflow-scrolling: touch !important; overscroll-behavior: contain !important; }',
     ].join('\n');
 
     // Collapsed bar. Scoped to page mode (`:not(.<ROOT_CLASS>)`): video mode's full-viewport rules

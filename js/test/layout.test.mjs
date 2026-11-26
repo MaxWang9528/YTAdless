@@ -159,11 +159,35 @@ test(`layout.js › ${FIXTURE} › every stylesheet selector is valid and matche
       if (selector.includes('ytadless-unstuck')) continue;
       // Only while the watch view is scrolled (tested below).
       if (selector.includes('ytadless-watch-collapsed') || selector.includes('ytadless-collapsed-bar')) continue;
+      // Comments / description panels only exist once opened (tested below).
+      if (/engagement-panel/.test(selector)) {
+        assert.doesNotThrow(() => page.document.querySelectorAll(selector), selector);
+        continue;
+      }
       let matches;
       assert.doesNotThrow(() => { matches = page.document.querySelectorAll(selector); }, selector);
       assert.ok(matches.length > 0, `${selector} matches the hydrated fixture`);
     }
   }
+});
+
+test(`layout.js › ${FIXTURE} › comments panel sits under the video and scrolls without mweb's at-top`, async (t) => {
+  const page = await layoutPage(t);
+  await page.cmd('layout', { mode: 'page' });
+  const doc = page.document;
+  const panel = doc.createElement('ytm-engagement-panel');
+  panel.innerHTML = '<ytm-engagement-panel-section-list-renderer><div class="engagement-panel-section-list-background">' +
+    '<div class="engagement-panel-container"><div class="engagement-panel-content-wrapper"></div></div></div>' +
+    '</ytm-engagement-panel-section-list-renderer>';
+  doc.body.appendChild(panel);
+  const css = (sel) => page.window.getComputedStyle(doc.querySelector(sel));
+  const videoBottom = `${page.window.innerWidth * 0.5625}px`;  // 56.25vw, as jsdom computes it
+  assert.equal(css('ytm-engagement-panel').top, videoBottom);
+  assert.equal(css('.engagement-panel-section-list-background').overflowY, 'auto', 'no at-top class needed');
+  assert.equal(css('.engagement-panel-content-wrapper').overflowY, 'auto');
+  panel.classList.add('force-fullscreen');
+  assert.notEqual(css('ytm-engagement-panel').top, videoBottom, 'fullscreen panels keep mweb\'s top');
+  assertClean(page, 'panel');
 });
 
 test(`layout.js › ${FIXTURE} › rejects an unknown mode without a scriptError and keeps the current one`, async (t) => {
