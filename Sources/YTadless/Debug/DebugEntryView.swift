@@ -4,7 +4,8 @@
 // button on the leading edge (drag it up or down to move it) with a badge for unseen script
 // errors; everything else is empty layout space, which SwiftUI doesn't hit-test, so touches pass
 // through to the webviews. The button opens the Debug panel as a sheet. Settings › Show Debug
-// button can hide it; shaking the iPhone opens the panel either way (`UIWindow.motionEnded` below).
+// button can hide it, and it is hidden in the landscape full-screen player unless Settings › Show
+// in full screen is on; shaking the iPhone opens the panel either way (`UIWindow.motionEnded` below).
 
 import SwiftUI
 import UIKit
@@ -37,10 +38,11 @@ struct DebugEntryView: View {
         GeometryReader { geometry in
             let limit = max(0, geometry.size.height / 2 - Self.size)
             let start = geometry.size.height * Self.initialOffsetFraction
+            let shows = showsButton(isLandscape: geometry.size.width > geometry.size.height)
             button
-                .opacity(settings.showsDebugButton ? 1 : 0)
-                .allowsHitTesting(settings.showsDebugButton)
-                .accessibilityHidden(!settings.showsDebugButton)
+                .opacity(shows ? 1 : 0)
+                .allowsHitTesting(shows)
+                .accessibilityHidden(!shows)
                 .offset(y: min(limit, max(-limit, start + offset)))
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         }
@@ -57,6 +59,15 @@ struct DebugEntryView: View {
         .onChange(of: keepsScreenAwake, initial: true) { _, awake in
             UIApplication.shared.isIdleTimerDisabled = awake
         }
+    }
+
+    /// Settings › Show Debug button, and › Show in full screen for the player's full screen: the
+    /// expanded player in landscape (PresentationLayout) or WebKit's own video full screen.
+    private func showsButton(isLandscape: Bool) -> Bool {
+        guard settings.showsDebugButton else { return false }
+        let inFullscreen = session.request != nil
+            && ((session.presentation == .expanded && isLandscape) || session.playback.presentation == .fullscreen)
+        return !inFullscreen || settings.showsDebugButtonInFullscreen
     }
 
     /// Settings › Keep screen awake: only while the player is playing (or about to).
