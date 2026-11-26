@@ -25,6 +25,8 @@ public enum BridgeMessage: Equatable, Sendable {
     case videoMeta(VideoMeta)
     case playback(PlaybackSnapshot)
     case presentation(MediaPresentation)
+    /// router.js (browse): show another bottom-nav tab's webview (PLAN.md §6.2 "Browse tabs").
+    case selectTab(BrowseTab)
     /// A well-formed message whose `type` this build doesn't know. Native code logs and ignores it.
     case unknown(type: String)
 
@@ -40,6 +42,7 @@ public enum BridgeMessage: Equatable, Sendable {
         case .videoMeta: "videoMeta"
         case .playback: "playback"
         case .presentation: "presentation"
+        case .selectTab: "selectTab"
         case .unknown(let type): type
         }
     }

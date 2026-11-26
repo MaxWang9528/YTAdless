@@ -1,0 +1,7 @@
+{
+  "type": "selectTab",
+  "description": "router.js (browse) asks native to show another bottom-nav tab's webview instead of letting mweb navigate this one (D2: one browse webview per tab).",
+  "optional": [],
+  "enums": { "tab": ["home", "subscriptions", "you"] },
+  "body": { "v": 1, "type": "selectTab", "frame": "main", "tab": "subscriptions" }
+}

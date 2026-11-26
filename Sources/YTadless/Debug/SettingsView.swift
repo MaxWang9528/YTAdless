@@ -98,7 +98,7 @@ struct SettingsView: View {
             }
 
             Section("Pages") {
-                Button("Reload browse", systemImage: "arrow.clockwise") { store.browseWebView.reload() }
+                Button("Reload browse", systemImage: "arrow.clockwise") { store.reloadBrowseTabs() }
                 Button("Reload player", systemImage: "arrow.clockwise") { store.playerWebView.reload() }
                     .disabled(store.playerWebView.url == nil)
                 Button("Reset Debug button position", systemImage: "arrow.uturn.backward") {
@@ -124,7 +124,7 @@ struct SettingsView: View {
     }
 
     private func reloadBoth() {
-        store.browseWebView.reload()
+        store.reloadBrowseTabs()
         if store.playerWebView.url != nil { store.playerWebView.reload() }
         rulesChangedSinceReload = false
     }

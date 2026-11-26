@@ -36,7 +36,7 @@ public struct PlaybackState: Equatable, Sendable {
             }
         case .presentation(let mode):
             presentation = mode
-        case .ready, .log, .scriptError, .route, .pageChanged, .filterHit, .unknown:
+        case .ready, .log, .scriptError, .route, .pageChanged, .filterHit, .selectTab, .unknown:
             break
         }
     }

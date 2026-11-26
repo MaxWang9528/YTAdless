@@ -5,7 +5,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createPage, assertClean, assertMatchesVector, routingVectors, NAMESPACE } from './harness.mjs';
+import { createPage, assertClean, assertMatchesVector, routingVectors, readJSON, PATHS, NAMESPACE } from './harness.mjs';
 
 const HOME = 'https://m.youtube.com/';
 const WATCH = 'https://m.youtube.com/watch?v=dQw4w9WgXcQ';
@@ -46,7 +46,30 @@ function checkMessages(page, label) {
 
 const { decide } = routingVectors();
 
-for (const c of decide) {
+// A link to another bottom-nav tab's root, tapped in the browse view (owned by Home here), shows
+// that tab's own webview instead (tab-switch.test.mjs); it is never a route.
+const TAB_ROOTS = new Map(readJSON(PATHS.vectors, 'browseTabs.json').cases.filter((c) => c.tab).map((c) => [c.path, c.tab]));
+function otherTab(c) {
+  if (c.role !== 'browse') return null;
+  const url = new URL(c.url);
+  if (!['youtube.com', 'www.youtube.com', 'm.youtube.com'].includes(url.hostname)) return null;
+  const tab = TAB_ROOTS.get(url.pathname) ?? null;
+  return tab === 'home' ? null : tab;
+}
+
+for (const c of decide.filter((v) => otherTab(v) !== null)) {
+  test(`router.js › routing.json ${c.name} › click shows the ${otherTab(c)} tab in browse`, async (t) => {
+    const page = await routerPage(t, c.role);
+    const { prevented, pageListenerRan } = clickLink(page, c.url, { inner: true });
+    assert.equal(prevented, true);
+    assert.equal(pageListenerRan, false);
+    assert.deepEqual(page.posted('route'), []);
+    assert.deepEqual(page.posted('selectTab').map((m) => m.tab), [otherTab(c)]);
+    checkMessages(page, c.name);
+  });
+}
+
+for (const c of decide.filter((v) => otherTab(v) === null)) {
   const leaves = c.expect.decision !== 'allow';
   test(`router.js › routing.json ${c.name} › click ${leaves ? 'is routed' : 'stays'} in ${c.role}`, async (t) => {
     const page = await routerPage(t, c.role);

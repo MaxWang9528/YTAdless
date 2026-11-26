@@ -1,0 +1,18 @@
+{
+  "description": "Which bottom-nav tab a path is the root page of (BrowseTab.tab(forPath:) in YTCore, tabOfPath in router.js). null: not a tab root.",
+  "cases": [
+    { "path": "/", "tab": "home" },
+    { "path": "", "tab": "home" },
+    { "path": "/feed/subscriptions", "tab": "subscriptions" },
+    { "path": "/feed/subscriptions/", "tab": "subscriptions" },
+    { "path": "/feed/you", "tab": "you" },
+    { "path": "/feed/library", "tab": "you" },
+    { "path": "/feed/history", "tab": null },
+    { "path": "/feed/trending", "tab": null },
+    { "path": "/results", "tab": null },
+    { "path": "/@MichaelOBurns", "tab": null },
+    { "path": "/watch", "tab": null },
+    { "path": "/shorts/ZZ8NTvw8_lU", "tab": null },
+    { "path": "/feed/subscriptionsx", "tab": null }
+  ]
+}

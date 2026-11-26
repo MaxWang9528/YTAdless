@@ -213,6 +213,7 @@ the Node tests compare against.
 | `videoMeta` | `videoId, title, author, lengthSeconds?, thumbnailURL?, isLive` | player-bridge.js | `PlaybackState` → C, D |
 | `playback` | `status, position, duration?, rate, videoId?` | player-bridge.js (~1 Hz while playing, plus on every change) | `PlaybackState` |
 | `presentation` | `mode: 'inline'\|'pip'\|'fullscreen'` | player-bridge.js | `PlaybackState`; D (PiP restore → expand) |
+| `selectTab` | `tab: 'home'\|'subscriptions'\|'you'` | router.js (browse) | B: `WebViewStore.showTab` (§6.2 "Browse tabs"; added 2026-11-25, user-approved) |
 
 **Decoding** (`BridgeMessage.decode`). `isValidJSONObject` runs first, because on Darwin
 `JSONSerialization.data` raises an Objective-C exception (a crash) on NaN. The decoder then uses
@@ -652,27 +653,26 @@ Decision table (`Router.decide`):
 Opening a video does a full `load` of `VideoRequest.watchURL` in the player view (D15).
 `m.youtube.com` and `www.` links are normalized.
 
-**Tab state** (router.js, browse role only; its `TAB_STATE` table). mweb's bottom-nav tabs
-(Home, Subscriptions, You) are SPA pushes. Each one fetches a fresh first page from
-`/youtubei/v1/browse` with `{browseId}`, so returning to a tab used to show a new feed scrolled to
-the top. Our routing doesn't cause this: browse `leaves()` only for video URLs, and SPA pushes never
-reach the navigation delegate. router.js keeps each tab's first page in memory, keyed by
-browseId + `params`. The page the document loaded with comes from `ytInitialData`; later pages are
-stored already pruned, because router.js's fetch wrapper sits outside hooks.js's. When the user
-switches back to a tab within `CACHE_TTL_MS`, the stored page is served instead of the network.
-router.js then restores the tab's scroll position, scrolling down step by step so that mweb's
-continuation loads grow the feed, and a touch cancels it.
+**Browse tabs** (user decision 2026-11-25, D2). mweb's bottom-nav tabs (Home, Subscriptions, You)
+are SPA pushes that re-render one page, so returning to a tab showed a fresh feed at the top (an
+earlier in-page cache of each tab's first page, removed, still re-rendered and lost everything
+below it). Now each tab has its own long-lived browse webview (`WebViewStore.browseWebViews`,
+`BrowseTab` in YTCore). All are created at launch and sit in the tree permanently; the one on
+screen has opacity 1 and takes touches, the others are at opacity 0 with hit testing off. A tab's
+view loads its root page (`BrowseTab.url`) the first time it is shown. `browseWebView` is the tab on
+screen; content rules go to every view; only the tab on screen sets `scrollsToTop` and the browse
+title.
 
-- **Switch or refresh.** A browse request for the tab already on screen (pull-to-refresh, or a tap
-  on the active tab) always goes to the network and replaces the stored page. The tab on screen is
-  tracked from delivered pages and `navigation`, so the push and the fetch can arrive in either order.
-- **Never cached.** Continuations and non-tab pages such as channels.
-- **No persistence.** Storage is memory only; signed-in feeds never go to web storage.
-- **Transport.** This works only if browse goes over fetch, and the Debug log says which transport
-  the page uses.
-- **Why router.js.** It lives in router.js rather than in its own script because manifest.json and
-  its P0 test are frozen (§5.1).
-- **Tests.** `js/test/tab-state.test.mjs`.
+- **Which tab a view owns.** router.js records the tab of the first page the view loaded in
+  sessionStorage (`ytadless.tab`, per webview), defaulting to Home.
+- **Switching.** router.js (browse) cancels a tap on another tab's pivot-bar item
+  (`ytm-pivot-bar-item-renderer`, matched by its `pivot-*` class; see `TABS` in router.js) or on a
+  link to another tab's root, and posts `selectTab{tab}`. A tap on the view's own tab is mweb's.
+  Backstop: a pushState onto another tab's root posts `selectTab` and goes back. Native also shows
+  the tab when the player view routes a tab-root URL to browse (`BrowseTabDecision.forURL`).
+- **Shared vectors.** `TestVectors/browseTabs.json`: which paths are which tab's root
+  (`BrowseTab.tab(forPath:)` and router.js `tabOfPath`).
+- **Tests.** `BrowseTabTests` (Swift), `js/test/tab-switch.test.mjs`.
 
 Other B work:
 

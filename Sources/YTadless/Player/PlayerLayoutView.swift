@@ -77,11 +77,17 @@ struct PlayerLayoutView: View {
         ZStack(alignment: .topLeading) {
             Color(uiColor: .systemBackground)
 
-            WebViewContainer(webView: store.browseWebView)
-                .frame(width: layout.browse.width, height: layout.browse.height)
-                .offset(x: layout.browse.minX, y: layout.browse.minY)
-                .allowsHitTesting(layout.isBrowseInteractive)
-                .accessibilityHidden(!layout.isBrowseInteractive)
+            // One browse webview per bottom-nav tab, all always in the tree (D2); only the tab on
+            // screen is visible and takes touches.
+            ForEach(BrowseTab.allCases, id: \.self) { tab in
+                let shown = tab == store.tabs.selected
+                WebViewContainer(webView: store.browseWebView(for: tab))
+                    .frame(width: layout.browse.width, height: layout.browse.height)
+                    .offset(x: layout.browse.minX, y: layout.browse.minY)
+                    .opacity(shown ? 1 : 0)
+                    .allowsHitTesting(shown && layout.isBrowseInteractive)
+                    .accessibilityHidden(!shown || !layout.isBrowseInteractive)
+            }
 
             // Behind the status bar and the expanded header, so the strip above the page isn't
             // see-through; it follows the drag with the player.

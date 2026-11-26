@@ -40,7 +40,7 @@ final class WebNavigationDelegate: NSObject, WKNavigationDelegate, WKUIDelegate 
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         if role == .browse {
-            store?.updateBrowseTitle(webView.title)
+            store?.updateBrowseTitle(webView.title, from: webView)
         }
     }
 

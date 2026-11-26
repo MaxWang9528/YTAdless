@@ -87,8 +87,8 @@ final class DebugLog {
             line(.info, "player-bridge.js", "presentation \(mode.rawValue)")
         case .unknown(let type):
             line(.warn, "bridge", "unknown message type \(type)")
-        case .route, .playback:
-            break  // routes are logged with their decision by WebViewStore; playback is ~1 Hz noise
+        case .route, .playback, .selectTab:
+            break  // routes and tab switches are logged by WebViewStore; playback is ~1 Hz noise
         }
     }
 

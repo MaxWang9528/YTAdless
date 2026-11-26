@@ -35,11 +35,12 @@ struct BridgeDecodeTests {
             .playback(PlaybackSnapshot(status: .loading, position: 0, duration: nil, rate: 1, videoId: nil))
         ),
         "presentation": (.presentation(.pip), true, nil),
+        "selectTab": (.selectTab(.subscriptions), true, nil),
         "unknown": (.unknown(type: "futureThing"), true, nil),
     ]
 
     static let knownTypes = ["ready", "log", "scriptError", "route", "pageChanged", "filterHit",
-                             "videoMeta", "playback", "presentation"]
+                             "videoMeta", "playback", "presentation", "selectTab"]
 
     @Test("every vector file has an expectation, and every message type has a vector")
     func vectorFilesMatchExpectations() throws {

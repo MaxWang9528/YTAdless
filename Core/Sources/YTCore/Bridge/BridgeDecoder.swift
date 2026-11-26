@@ -20,6 +20,7 @@ enum BridgeDecoder {
     private struct PageChanged: Decodable { let url: String; let title: String? }
     private struct FilterHit: Decodable { let rule: String; let count: Int }
     private struct Presentation: Decodable { let mode: MediaPresentation }
+    private struct SelectTab: Decodable { let tab: BrowseTab }
 
     static func decode(_ body: Any) throws -> (message: BridgeMessage, isMainFrame: Bool) {
         guard body is [String: Any] || body is NSDictionary,
@@ -76,6 +77,8 @@ enum BridgeDecoder {
             message = .playback(try payload(PlaybackSnapshot.self))
         case "presentation":
             message = .presentation(try payload(Presentation.self).mode)
+        case "selectTab":
+            message = .selectTab(try payload(SelectTab.self).tab)
         default:
             message = .unknown(type: type)
         }

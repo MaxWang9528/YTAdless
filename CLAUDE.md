@@ -55,7 +55,8 @@ The tree and per-path owners are in PLAN.md §4. The short version:
 - Swift 6 language mode, strict concurrency. App-target types touching UIKit or WebKit are `@MainActor`.
 - Logic that can be pure goes in `YTCore` with tests, so app-target code stays a thin adapter.
   App-target code has no unit tests; `xtool dev build` is its only check.
-- The two WKWebViews are created once (in `WebViewStore`) and hosted by `WebViewContainer`. Never
+- The WKWebViews (the player, and one browse view per bottom-nav tab) are created once (in
+  `WebViewStore`) and hosted by `WebViewContainer`. Never
   create a WKWebView in `makeUIView`, never put one in a conditional SwiftUI branch, never re-parent one.
 - Bridge: JS→native messages are `BridgeMessage` (decoded in YTCore). Native→JS calls go through
   `JSCommand` and `callAsyncJavaScript` with arguments as a JSON string. Never build JS source by
@@ -158,9 +159,11 @@ captures (`tools/capture.mjs`). Signed-in captures from the device contain accou
 - **D1** Use WKWebView through `UIViewRepresentable`, not the iOS 26 SwiftUI `WebView`/`WebPage`.
   The app needs the full `WKWebViewConfiguration` (inline playback, PiP, content rule lists,
   content worlds, user scripts) and long-lived instances.
-- **D2** Two long-lived WKWebViews share `WKWebsiteDataStore.default()`, so there is one login.
-  They are never recreated or re-parented, and mode changes only move or scale their containers.
-  Detaching a playing webview risks pauses and reloads.
+- **D2** Long-lived WKWebViews share `WKWebsiteDataStore.default()`, so there is one login: the
+  player, and one browse view per bottom-nav tab (Home, Subscriptions, You; user decision
+  2026-11-25), so switching tabs keeps each tab's page and scroll instead of mweb re-rendering one.
+  They are never recreated or re-parented, and mode changes only move or scale their containers;
+  hidden tabs stay in the tree at opacity 0. Detaching a playing webview risks pauses and reloads.
 - **D3** Pure logic lives in a separate local package `Core/`. `swift test` builds every target in
   a package, and the iOS app target can't build on Linux (verified).
 - **D4** Scripts and rules are resources of the `YTAssets` target, so Swift tests validate the

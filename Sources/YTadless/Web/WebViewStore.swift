@@ -1,14 +1,18 @@
 // WebViewStore — owner: Module B (PLAN.md §5.5, §6.2).
 //
-// Owns the two long-lived WKWebViews (D2): created once, sharing WKWebsiteDataStore.default()
-// (one login), with the manifest's scripts in the page world (D5, D7), one message handler
+// Owns the long-lived WKWebViews (D2): the player, and one browse view per bottom-nav tab
+// (BrowseTab: Home, Subscriptions, You), so switching tabs keeps each tab's page, feed and scroll.
+// All are created once, share WKWebsiteDataStore.default() (one login), and are never recreated;
+// a tab's view loads its root page the first time it is shown. They have the manifest's scripts in the page world (D5, D7), one message handler
 // (`ytadless`) feeding BridgeEventHub, the Safari user-agent token (D17), and the content-rule
-// list (D10), which is added before either view loads its first page.
+// list (D10), which is added before any view loads its first page. router.js posts `selectTab`
+// for a tap on another tab; `browseWebView` is always the tab on screen.
 //
 // Routing: router.js posts `route` for in-page taps, SPA pushes and window.open; the navigation
 // and UI delegates (WebNavigationDelegate.swift) catch full loads and new windows. All of them
 // end in Router.decide and `perform`.
 
+import Observation
 import os
 import UIKit
 import WebKit
@@ -17,8 +21,22 @@ import YTCore
 
 @MainActor
 final class WebViewStore: PlayerControlling {
-    let browseWebView: WKWebView
+    /// One browse webview per tab, created at launch and never recreated (D2).
+    let browseWebViews: [BrowseTab: WKWebView]
+    /// Which tab is on screen and which tabs have loaded; PlayerLayoutView observes it.
+    let tabs = BrowseTabState()
     let playerWebView: WKWebView
+
+    /// The browse webview on screen.
+    var browseWebView: WKWebView { browseWebView(for: tabs.selected) }
+
+    func browseWebView(for tab: BrowseTab) -> WKWebView {
+        guard let view = browseWebViews[tab] else { preconditionFailure("every BrowseTab has a webview") }
+        return view
+    }
+
+    /// Every webview: the browse tabs in BrowseTab order, then the player.
+    var allWebViews: [WKWebView] { BrowseTab.allCases.map(browseWebView(for:)) + [playerWebView] }
     /// The in-app Debug log (DebugEntryView shows it). Subscribed before anything loads.
     let debugLog: DebugLog
 
@@ -35,7 +53,7 @@ final class WebViewStore: PlayerControlling {
     private var delegates: [WebNavigationDelegate] = []
     private var hubSubscription: AnyObject?
     private var foregroundObserver: NSObjectProtocol?
-    private var titleObservation: NSKeyValueObservation?
+    private var titleObservations: [NSKeyValueObservation] = []
 
     /// The compiled content-rule lists (empty until loaded); `applyContentRules` installs them.
     private(set) var contentRuleLists = ContentRuleLoader.Lists()
@@ -52,14 +70,19 @@ final class WebViewStore: PlayerControlling {
         log.attach(to: hub)
         debugLog = log
         let plans = Self.injectionPlans(log: log)
-        browseWebView = Self.makeWebView(role: .browse, scripts: plans[.browse] ?? [], hub: hub, log: log)
+        var browse: [BrowseTab: WKWebView] = [:]
+        for tab in BrowseTab.allCases {
+            browse[tab] = Self.makeWebView(role: .browse, scripts: plans[.browse] ?? [], hub: hub, log: log)
+        }
+        browseWebViews = browse
         playerWebView = Self.makeWebView(role: .player, scripts: plans[.player] ?? [], hub: hub, log: log)
-        for role in WebRole.allCases {
+        for (role, view) in BrowseTab.allCases.map({ (WebRole.browse, browse[$0]!) }) + [(.player, playerWebView)] {
             let delegate = WebNavigationDelegate(role: role, store: self)
             delegates.append(delegate)
-            webView(for: role).navigationDelegate = delegate
-            webView(for: role).uiDelegate = delegate
+            view.navigationDelegate = delegate
+            view.uiDelegate = delegate
         }
+        updateScrollsToTop()
         hubSubscription = hub.subscribe { [weak self] event in
             self?.handle(event)
         }
@@ -70,14 +93,14 @@ final class WebViewStore: PlayerControlling {
         }
         // WebKit's title follows document.title after SPA navigations too; pageChanged's title is
         // read right after pushState, before YouTube updates it.
-        titleObservation = browseWebView.observe(\.title, options: [.new]) { [weak self] webView, _ in
-            MainActor.assumeIsolated { self?.updateBrowseTitle(webView.title) }
+        for view in browse.values {
+            titleObservations.append(view.observe(\.title, options: [.new]) { [weak self] webView, _ in
+                MainActor.assumeIsolated { self?.updateBrowseTitle(webView.title, from: webView) }
+            })
         }
         debugLog.native(.info, "WebViewStore", "user agent application name: \(SafariUserAgent.applicationName)")
 
-        whenRulesReady { [weak self] in
-            self?.browseWebView.load(URLRequest(url: Self.homeURL))
-        }
+        showTab(.home, reason: "launch")
         Task { [weak self] in
             guard let self else { return }
             contentRuleLists = await ContentRuleLoader(log: debugLog).load()
@@ -92,8 +115,32 @@ final class WebViewStore: PlayerControlling {
         }
     }
 
+    /// The player, or the browse tab on screen.
     func webView(for role: WebRole) -> WKWebView {
         role == .browse ? browseWebView : playerWebView
+    }
+
+    // MARK: Browse tabs
+
+    /// Shows `tab`'s webview, loading its root page the first time.
+    func showTab(_ tab: BrowseTab, reason: String) {
+        if case .show(_, let loadFirst) = BrowseTabDecision.select(tab, loaded: tabs.loaded), loadFirst {
+            tabs.loaded.insert(tab)
+            let view = browseWebView(for: tab)
+            whenRulesReady { view.load(URLRequest(url: tab.url)) }
+        }
+        let previous = tabs.selected
+        tabs.selected = tab
+        updateScrollsToTop()
+        updateBrowseTitle(browseWebView.title, from: browseWebView)
+        debugLog.native(.info, "Tabs", "\(previous.rawValue) → \(tab.rawValue) (\(reason))")
+    }
+
+    /// The status-bar tap scrolls a scroll view to the top only when exactly one on screen allows it.
+    private func updateScrollsToTop() {
+        for tab in BrowseTab.allCases {
+            browseWebView(for: tab).scrollView.scrollsToTop = tab == tabs.selected
+        }
     }
 
     // MARK: PlayerControlling
@@ -161,8 +208,12 @@ final class WebViewStore: PlayerControlling {
             open(request)
             return false
         case .openInBrowse(let url):
-            whenRulesReady { [weak self] in
-                self?.browseWebView.load(URLRequest(url: url))
+            switch BrowseTabDecision.forURL(url, loaded: tabs.loaded) {
+            case .show(let tab, _):
+                showTab(tab, reason: "open \(url.absoluteString)")
+            case .loadInCurrent(let url):
+                let view = browseWebView
+                whenRulesReady { view.load(URLRequest(url: url)) }
             }
             session.collapseForBrowsing()
             return false
@@ -212,13 +263,22 @@ final class WebViewStore: PlayerControlling {
             handleRoute(url, trigger: trigger, role: event.role)
         case .ready where event.role == .player:
             refreshPlayerState(reason: "ready")
+        case .selectTab(let tab) where event.role == .browse:
+            showTab(tab, reason: "tap")
         default:
             break
         }
     }
 
-    func updateBrowseTitle(_ title: String?) {
+    /// Only the tab on screen names the browse page.
+    func updateBrowseTitle(_ title: String?, from view: WKWebView) {
+        guard view === browseWebView else { return }
         if let title, !title.isEmpty { session.browseTitle = title }
+    }
+
+    /// Reloads every browse tab that has loaded a page.
+    func reloadBrowseTabs() {
+        for tab in tabs.loaded { browseWebView(for: tab).reload() }
     }
 
     private struct PlayerStateResult: Decodable {
@@ -246,15 +306,15 @@ final class WebViewStore: PlayerControlling {
 
     // MARK: Content rules (Debug › Settings toggles them)
 
-    /// Adds the lists the settings enable to both webviews and removes the others. WebKit uses the
+    /// Adds the lists the settings enable to every webview and removes the others. WebKit uses the
     /// change for new requests; the current page keeps what it already loaded until a reload.
     func applyContentRules(_ settings: AppSettings) {
         let enabled = [
             settings.blockAdRequests ? contentRuleLists.network : nil,
             settings.hideAdElements ? contentRuleLists.cosmetic : nil,
         ].compactMap { $0 }
-        for role in WebRole.allCases {
-            let controller = webView(for: role).configuration.userContentController
+        for view in allWebViews {
+            let controller = view.configuration.userContentController
             controller.removeAllContentRuleLists()
             for list in enabled { controller.add(list) }
         }
@@ -283,8 +343,8 @@ final class WebViewStore: PlayerControlling {
 
     private static func makeWebView(role: WebRole, scripts: [InjectedScript], hub: BridgeEventHub, log: DebugLog) -> WKWebView {
         let configuration = WKWebViewConfiguration()
-        configuration.websiteDataStore = .default()                  // one login for both views (D2)
-        configuration.allowsInlineMediaPlayback = true               // both views (D14)
+        configuration.websiteDataStore = .default()                  // one login for every view (D2)
+        configuration.allowsInlineMediaPlayback = true               // every view (D14)
         configuration.allowsPictureInPictureMediaPlayback = true
         // Browse never starts media on its own; routed videos autoplay in the player (D14).
         configuration.mediaTypesRequiringUserActionForPlayback = role == .browse ? .all : []
@@ -352,6 +412,14 @@ final class WebViewStore: PlayerControlling {
         case .openExternally(let url): "openExternally \(url.absoluteString)"
         }
     }
+}
+
+/// The browse tab on screen, and the tabs whose webview has started loading (PLAN.md §6.2).
+@MainActor
+@Observable
+final class BrowseTabState {
+    var selected: BrowseTab = .home
+    var loaded: Set<BrowseTab> = []
 }
 
 /// `applicationNameForUserAgent` (D17): WKWebView's UA plus Safari's tokens, so Google sign-in and
