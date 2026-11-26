@@ -6,6 +6,7 @@ DerivedData/
 .swiftpm/configuration/registries.json
 .swiftpm/xcode/package.xcworkspace/contents.xcworkspacedata
 .netrc
+*.jpg
 
 # xtool build output
 /xtool
@@ -17,3 +18,11 @@ DerivedData/
 node_modules/
 # Fixtures captured while signed in contain account data: never commit them.
 /js/fixtures/local/
+
+# Signing material (ad hoc distribution): never commit
+*.p12
+*.mobileprovision
+/dist/
+
+# Claude Code agent worktrees (embedded git repos): never commit
+/.claude/worktrees/

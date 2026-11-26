@@ -1,67 +1,27 @@
-Getting WSL to see the iPhone (for xtool dev run)
-=================================================
+iPhone: switching between WSL (xtool) and Windows (Apple Devices)
+=================================================================
 
-Symptom: `xtool dev run` is stuck on "waiting for device", or `xtool devices`
-hangs or lists nothing.
+The phone can be used by only one side at a time. Plug it in and unlock it.
+Its BUSID is 2-2 (check with `usbipd list`; it changes if you use another port).
 
-Cause: the iPhone is connected to Windows but not attached to WSL, or the
-usbmuxd daemon isn't running in WSL. The attachment drops whenever the phone
-is unplugged or reboots, or WSL restarts (`wsl --shutdown`, a Windows reboot).
+One-time setup (Admin PowerShell):
+    usbipd bind --busid 2-2
 
+To WSL, for xtool (Admin PowerShell, then WSL):
+    Stop-Service "Apple Mobile Device Service"
+    usbipd attach --wsl --busid 2-2
+    sudo pkill usbmuxd; sudo usbmuxd
+    xtool devices                       # then: xtool dev run
 
-Fix (run these in WSL)
-----------------------
+To Windows, for Apple Devices or Files (Admin PowerShell):
+    usbipd detach --busid 2-2
+    Start-Service "Apple Mobile Device Service"
+    Then replug the phone.
 
-1. Plug in the phone and unlock it.
+If attach says "Device busy" (Windows still has the phone):
+    usbipd bind --busid 2-2 --force     # for xtool
+    usbipd unbind --busid 2-2           # undoes it so Apple Devices works,
+                                        # then redo the one-time setup
 
-2. Find the iPhone's bus ID:
-
-       usbipd.exe list
-
-   Look for "Apple Mobile Device USB Composite Device" (VID:PID 05ac:12a8).
-   Its BUSID looks like 2-2. It can change if you use a different USB port.
-   Its STATE should be "Shared". If it says "Not shared", see "First-time
-   setup" below.
-
-3. Attach it to WSL (use your BUSID):
-
-       usbipd.exe attach --wsl --busid 2-2
-
-4. Start usbmuxd:
-
-       sudo usbmuxd
-
-   If it says it's already running, restart it:
-
-       sudo pkill usbmuxd; sudo usbmuxd
-
-5. If the phone asks "Trust This Computer?", tap Trust and enter your passcode.
-
-6. Check that xtool sees the phone:
-
-       xtool devices
-
-   Then install:
-
-       xtool dev run
-
-
-First-time setup (only if STATE is "Not shared")
------------------------------------------------
-
-In an *Administrator* PowerShell on Windows:
-
-    usbipd bind --busid 2-2 --force
-
-After that, step 3 works without admin rights.
-
-
-Still stuck?
-------------
-
-- Unplug and replug the phone, then repeat steps 2-4.
-- If attach fails, run `wsl --shutdown` in PowerShell, reopen WSL, and repeat
-  steps 2-4.
-- Make sure the Apple Devices app (or iTunes) isn't syncing the phone at the
-  same time.
-- The phone must stay unlocked while xtool installs the app.
+Notes: tap "Trust" on the phone if asked. Re-attach after unplugging the phone,
+restarting it, or restarting WSL.
