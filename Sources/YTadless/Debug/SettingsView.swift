@@ -105,10 +105,12 @@ struct SettingsView: View {
 
             Section {
                 Toggle("Show Debug button", isOn: $settings.showsDebugButton)
+                Toggle("Show in full screen", isOn: $settings.showsDebugButtonInFullscreen)
+                    .disabled(!settings.showsDebugButton)
             } header: {
                 Text("Debug")
             } footer: {
-                Text("When hidden, shake the iPhone to open Debug and Settings.")
+                Text("When hidden (always, or in landscape full screen), shake the iPhone to open Debug and Settings.")
             }
 
             Section("Pages") {

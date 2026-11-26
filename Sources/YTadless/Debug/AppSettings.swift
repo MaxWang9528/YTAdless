@@ -10,12 +10,14 @@
 //   keepScreenAwake     → DebugEntryView sets UIApplication.isIdleTimerDisabled while playing
 //   debugButtonOffset   → DebugEntryView's vertical position
 //   showsDebugButton    → DebugEntryView draws the button (when off, shaking the iPhone opens Debug)
+//   showsDebugButtonInFullscreen → DebugEntryView also draws it in the landscape full-screen player
 //   sponsorBlockEnabled /
 //   sponsorBlockCategories → SponsorBlockService (Module D) observes them and re-sends segments
 //   aiSponsorDetection  → SponsorDetectionService (Module D): on-device guesses when SponsorBlock has none
 //   sponsorBlockAutoSkip / aiSponsorAutoSkip → the services send them as `autoSkip` (Skip button when off)
 //   hideMarkersInFullscreen → both services send it as `hideMarkersInFullscreen` (sponsorblock.js)
-// Defaults reproduce the app's behaviour before settings existed.
+// Defaults mostly reproduce the app's behaviour before settings existed; SponsorBlock and
+// on-device detection default to on (user decision 2026-11-26).
 
 import SwiftUI
 import UIKit
@@ -51,13 +53,17 @@ final class AppSettings {
     var debugButtonOffset: Double { didSet { save(debugButtonOffset, .debugButtonOffset) } }
     /// On by default. Off hides the Debug button; shaking the iPhone still opens the panel.
     var showsDebugButton: Bool { didSet { save(showsDebugButton, .showsDebugButton) } }
-    /// Off by default: when on, a 4-char SHA-256 prefix of each video ID goes to sponsor.ajay.app.
+    /// Off by default: the Debug button is hidden in the landscape full-screen player (shake still works).
+    var showsDebugButtonInFullscreen: Bool {
+        didSet { save(showsDebugButtonInFullscreen, .showsDebugButtonInFullscreen) }
+    }
+    /// On by default: a 4-char SHA-256 prefix of each video ID goes to sponsor.ajay.app.
     var sponsorBlockEnabled: Bool { didSet { save(sponsorBlockEnabled, .sponsorBlockEnabled) } }
     /// Enabled SponsorBlock categories, persisted as their API names.
     var sponsorBlockCategories: Set<SponsorBlock.Category> {
         didSet { save(SponsorBlock.Category.rawValues(sponsorBlockCategories), .sponsorBlockCategories) }
     }
-    /// Off by default: when on, the transcript of a video SponsorBlock has nothing for is analysed
+    /// On by default: the transcript of a video SponsorBlock has nothing for is analysed
     /// on the iPhone (Apple Intelligence) and likely sponsor reads are suggested (see aiSponsorAutoSkip).
     var aiSponsorDetection: Bool { didSet { save(aiSponsorDetection, .aiSponsorDetection) } }
     /// Off by default: SponsorBlock segments show a Skip button instead of being skipped.
@@ -75,6 +81,7 @@ final class AppSettings {
         case videoSwipeToMinimize, blockAdRequests, hideAdElements, keepScreenAwake, debugButtonOffset
         case sponsorBlockEnabled, sponsorBlockCategories, aiSponsorDetection
         case sponsorBlockAutoSkip, aiSponsorAutoSkip, showsDebugButton, hideMarkersInFullscreen
+        case showsDebugButtonInFullscreen
         var name: String { "ytadless.settings." + rawValue }
     }
 
@@ -92,13 +99,14 @@ final class AppSettings {
         hideAdElements = Self.bool(defaults, .hideAdElements) ?? true
         keepScreenAwake = Self.bool(defaults, .keepScreenAwake) ?? false
         debugButtonOffset = Self.double(defaults, .debugButtonOffset) ?? 0
-        sponsorBlockEnabled = Self.bool(defaults, .sponsorBlockEnabled) ?? false
+        sponsorBlockEnabled = Self.bool(defaults, .sponsorBlockEnabled) ?? true
         sponsorBlockCategories = defaults.stringArray(forKey: Key.sponsorBlockCategories.name)
             .map(SponsorBlock.Category.set(fromRawValues:)) ?? SponsorBlock.Category.defaults
-        aiSponsorDetection = Self.bool(defaults, .aiSponsorDetection) ?? false
+        aiSponsorDetection = Self.bool(defaults, .aiSponsorDetection) ?? true
         sponsorBlockAutoSkip = Self.bool(defaults, .sponsorBlockAutoSkip) ?? false
         aiSponsorAutoSkip = Self.bool(defaults, .aiSponsorAutoSkip) ?? false
         showsDebugButton = Self.bool(defaults, .showsDebugButton) ?? true
+        showsDebugButtonInFullscreen = Self.bool(defaults, .showsDebugButtonInFullscreen) ?? false
         hideMarkersInFullscreen = Self.bool(defaults, .hideMarkersInFullscreen) ?? false
         // A window that appears later (a new scene) gets the current appearance too.
         windowObserver = NotificationCenter.default.addObserver(
@@ -129,12 +137,13 @@ final class AppSettings {
         hideAdElements = true
         keepScreenAwake = false
         debugButtonOffset = 0
-        sponsorBlockEnabled = false
+        sponsorBlockEnabled = true
         sponsorBlockCategories = SponsorBlock.Category.defaults
-        aiSponsorDetection = false
+        aiSponsorDetection = true
         sponsorBlockAutoSkip = false
         aiSponsorAutoSkip = false
         showsDebugButton = true
+        showsDebugButtonInFullscreen = false
         hideMarkersInFullscreen = false
     }
 
