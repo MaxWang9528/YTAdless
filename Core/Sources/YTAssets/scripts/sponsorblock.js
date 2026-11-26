@@ -114,10 +114,8 @@
     // ones, with an outline so a thin span still reads as "maybe" (our own style, 2026-11-25).
     SUGGESTED_OPACITY: '0.6',
     SUGGESTED_STRIPE_PX: 4,
-    // Suggestion prompt: visible while the playhead is inside the segment, at most this long.
-    SUGGEST_TOAST_MS: 8000,
-    // A Skip button (autoSkip false) appears this long before its segment starts (user request,
-    // 2026-11-25), and stays PROMPT_LEAD_S longer than SUGGEST_TOAST_MS.
+    // A Skip button (autoSkip false) appears this long before its segment starts and stays until
+    // the playhead leaves the segment, with no timeout (user requests, 2026-11-25).
     PROMPT_LEAD_S: 3,
     // Caption tracks (player fixtures 2026-11-24-player-*.json: captions.playerCaptionsTracklistRenderer
     // .captionTracks[] with a relative baseUrl `/api/timedtext?v=…&lang=…`, languageCode, kind
@@ -320,7 +318,7 @@
       ns.log('info', SOURCE, (here.suggested ? 'suggestion: possible ' : 'prompt: ') + here.category + ' at ' +
         t.toFixed(1) + ' s (segment ' + here.start + '–' + here.end + '); prompting, not skipping');
       showToast({
-        kind: 'suggest', key: here.key, ms: CONFIG.SUGGEST_TOAST_MS + CONFIG.PROMPT_LEAD_S * 1000, button: 'Skip',
+        kind: 'suggest', key: here.key, ms: 0, button: 'Skip',  // 0: until checkPrompts sees it leave
         text: here.suggested ? 'Possible ' + label(here) : capitalised(label(here)),
         onTap: () => skipByTap(here),
       });
@@ -415,10 +413,12 @@
       placeToast();
       toastKind = kind;
       toastKey = key;
-      toastTimer = setTimeout(() => ns.guard(SOURCE, () => {
-        toastTimer = null;
-        if (toast === box) hideToast();
-      }), ms);
+      if (ms > 0) {
+        toastTimer = setTimeout(() => ns.guard(SOURCE, () => {
+          toastTimer = null;
+          if (toast === box) hideToast();
+        }), ms);
+      }
     }
 
     // ── markers ─────────────────────────────────────────────────────────────────────────────

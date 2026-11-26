@@ -272,17 +272,17 @@ test('sponsorblock.js › leaving a suggested segment › the prompt hides', asy
   assertAll(page);
 });
 
-test('sponsorblock.js › suggestion prompt timeout › hides after ~11 s (3 s lead + 8 s) and stays hidden while inside', async (t) => {
+test('sponsorblock.js › suggestion prompt › stays for the whole segment, then hides', async (t) => {
   const { page, suggest, at, toast } = await sbPage(t);
   await suggest([GUESS]);
   at(62);
   assert.ok(toast());
-  await page.flush(4100);
-  assert.ok(toast(), 'longer-lived than the 4 s skip toast');
-  await page.flush(4100);
-  assert.ok(toast(), 'still there at ~8 s: the 3 s lead is added');
-  await page.flush(3100);
-  assert.equal(toast(), null);
+  await page.flush(60_000);
+  assert.ok(toast(), 'no timeout: still there a minute later while inside');
+  at(90);
+  assert.ok(toast(), 'still there near the end');
+  at(96);
+  assert.equal(toast(), null, 'hidden once past the end');
   at(70);
   assert.equal(toast(), null, 'shown once');
   assertAll(page);
