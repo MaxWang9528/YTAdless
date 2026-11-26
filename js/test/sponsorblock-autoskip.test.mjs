@@ -124,28 +124,28 @@ test('sponsorblock.js › both lists as buttons › each prompts with its own la
   assertAll(env.page);
 });
 
-test('sponsorblock.js › Skip button 3 s early › appears before the start; a tap skips to the end', async (t) => {
+test('sponsorblock.js › SponsorBlock Skip button › appears at the start, not early; a tap skips to the end', async (t) => {
   const env = await sbPage(t);
   await env.page.cmd('sponsorSegments', { videoId: ID, segments: [SEG], autoSkip: false });
-  env.at(6.5);
-  assert.equal(env.toast(), null, '3.5 s before: nothing yet');
-  env.at(7.2);
-  assert.ok(env.toast(), '2.8 s before: Skip button shown');
+  env.at(9.8);
+  assert.equal(env.toast(), null, 'just before the start: nothing yet');
+  env.at(10.1);
+  assert.ok(env.toast(), 'at the start: Skip button shown');
   env.tap();
   assert.equal(env.video.currentTime, 30);
   assertAll(env.page);
 });
 
-test('sponsorblock.js › Skip button 3 s early › seeking back before the lead re-arms it', async (t) => {
+test('sponsorblock.js › SponsorBlock Skip button › seeking back before the start re-arms it', async (t) => {
   const env = await sbPage(t);
   await env.page.cmd('sponsorSegments', { videoId: ID, segments: [SEG], autoSkip: false });
-  env.at(8);
+  env.at(12);
   env.at(40);
-  env.at(7.5);
-  assert.equal(env.toast(), null, 'still inside the lead window: not re-armed');
+  env.at(11);
+  assert.equal(env.toast(), null, 'back inside, not before the start: not re-armed');
   env.at(2);
-  env.at(8);
-  assert.ok(env.toast(), 're-armed after going back before the lead');
+  env.at(12);
+  assert.ok(env.toast(), 're-armed after going back before the start');
   assertAll(env.page);
 });
 

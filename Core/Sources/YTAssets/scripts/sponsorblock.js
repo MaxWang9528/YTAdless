@@ -10,8 +10,8 @@
 //            Same validation and video check. Suggestions are drawn striped (outlined, fainter)
 //            on the seek bar. A suggestion overlapping a real segment is not drawn, skipped or prompted.
 //            `autoSkip` (a boolean; missing = true for sponsorSegments, false for suggestions):
-//            true = skipped automatically with an Undo toast; false = from PROMPT_LEAD_S (3 s) before
-//            its start, a toast offers Skip ("Sponsor" or "Possible sponsor"; once per segment per load,
+//            true = skipped automatically with an Undo toast; false = from its start (a suggestion:
+//            PROMPT_LEAD_S, 3 s, before it) until its end, a toast offers Skip ("Sponsor" or "Possible sponsor"; once per segment per load,
 //            seeking back before its start re-arms it). Nothing with autoSkip false is skipped untapped.
 //            `captionTracks {}` → {videoId: string|null, tracks: [{baseUrl, languageCode, kind, name}],
 //            client: {clientVersion, signatureTimestamp} | null} for the page's current video, from the `playerResponse` event (per-video cache, so a
@@ -114,8 +114,9 @@
     // ones, with an outline so a thin span still reads as "maybe" (our own style, 2026-11-25).
     SUGGESTED_OPACITY: '0.6',
     SUGGESTED_STRIPE_PX: 4,
-    // A Skip button (autoSkip false) appears this long before its segment starts and stays until
-    // the playhead leaves the segment, with no timeout (user requests, 2026-11-25).
+    // A Skip button (autoSkip false) stays until the playhead leaves the segment, with no timeout.
+    // SponsorBlock segments get it at their start; on-device guesses this long before theirs, since
+    // the guessed start is approximate (user requests, 2026-11-25).
     PROMPT_LEAD_S: 3,
     // Caption tracks (player fixtures 2026-11-24-player-*.json: captions.playerCaptionsTracklistRenderer
     // .captionTracks[] with a relative baseUrl `/api/timedtext?v=…&lang=…`, languageCode, kind
@@ -302,14 +303,15 @@
     }
 
     // ── Skip prompts (autoSkip false: never skipped without a tap) ─────────────────────────
-    // From PROMPT_LEAD_S before the start until the end, with the same end rules as `inside`.
+    // From the start (a guess: PROMPT_LEAD_S before it) until the end, with the same end rules as `inside`.
+    const promptStart = (segment) => segment.suggested ? Math.max(0, segment.start - CONFIG.PROMPT_LEAD_S) : segment.start;
     const promptWindow = (segment, t, duration) =>
-      inside({ ...segment, start: Math.max(0, segment.start - CONFIG.PROMPT_LEAD_S) }, t, duration) &&
+      inside({ ...segment, start: promptStart(segment) }, t, duration) &&
       !(duration > 0 && segment.start >= duration - CONFIG.END_GUARD_S);
 
     function checkPrompts(list, t, duration) {
       // Being before a prompted segment's window means the user seeked back: prompt it again.
-      for (const s of list) if (t < s.start - CONFIG.PROMPT_LEAD_S) prompted.delete(s.key);
+      for (const s of list) if (t < promptStart(s)) prompted.delete(s.key);
       const here = list.find((s) => promptWindow(s, t, duration)) || null;
       if (toastKind === 'suggest' && (!here || here.key !== toastKey)) hideToast();
       // An automatic-skip toast takes precedence; the prompt waits (unprompted) until it is gone.
