@@ -205,6 +205,18 @@ struct JSCommandTests {
                 != JSCommand.sponsorSegments(videoId: "a", segments: []))
     }
 
+    @Test("hideMarkersInFullscreen: sent only when true, on both segment commands")
+    func hideMarkersInFullscreen() {
+        #expect(JSCommand.sponsorSegments(videoId: "a", segments: [], hideMarkersInFullscreen: true).argumentsJSON
+                == #"{"autoSkip":true,"hideMarkersInFullscreen":true,"segments":[],"videoId":"a"}"#)
+        #expect(JSCommand.suggestedSegments(videoId: "a", segments: [], hideMarkersInFullscreen: true).argumentsJSON
+                == #"{"autoSkip":false,"hideMarkersInFullscreen":true,"segments":[],"videoId":"a"}"#)
+        #expect(JSCommand.sponsorSegments(videoId: "a", segments: [], hideMarkersInFullscreen: false).argumentsJSON
+                == #"{"autoSkip":true,"segments":[],"videoId":"a"}"#, "false = omitted, like older native")
+        #expect(JSCommand.suggestedSegments(videoId: "a", segments: [], hideMarkersInFullscreen: true)
+                != JSCommand.suggestedSegments(videoId: "a", segments: []))
+    }
+
     @Test("the function body only references the named arguments")
     func functionBody() {
         #expect(JSCommand.functionBody

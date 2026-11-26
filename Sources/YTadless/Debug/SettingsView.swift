@@ -97,6 +97,20 @@ struct SettingsView: View {
                 Text("Runs only when SponsorBlock is off or has no segments for a video. The video's transcript is analysed on this iPhone with Apple Intelligence and never leaves the phone. Guesses are shown as dashed marks on the seek bar. With \"Skip automatically\" off a Skip button appears when one starts; on, they are skipped with an Undo button (guesses can be wrong).")
             }
 
+            Section {
+                Toggle("Hide segment marks in full screen", isOn: $settings.hideMarkersInFullscreen)
+            } footer: {
+                Text("Hides the SponsorBlock and on-device AI marks on the seek bar in landscape full screen. Skip and Undo buttons still appear.")
+            }
+
+            Section {
+                Toggle("Show Debug button", isOn: $settings.showsDebugButton)
+            } header: {
+                Text("Debug")
+            } footer: {
+                Text("When hidden, shake the iPhone to open Debug and Settings.")
+            }
+
             Section("Pages") {
                 Button("Reload browse", systemImage: "arrow.clockwise") { store.reloadBrowseTabs() }
                 Button("Reload player", systemImage: "arrow.clockwise") { store.playerWebView.reload() }

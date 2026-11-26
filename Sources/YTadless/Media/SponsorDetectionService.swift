@@ -50,6 +50,7 @@ final class SponsorDetectionService {
     private var current: (videoId: String, isLive: Bool)?
     private var applied: Bool
     private var appliedAutoSkip: Bool
+    private var appliedHideMarkers: Bool
     /// videoId → suggestions (possibly []), most recent last.
     private var cache: [String: [SkipSegment]] = [:]
     private var cacheOrder: [String] = []
@@ -71,6 +72,7 @@ final class SponsorDetectionService {
         self.log = log
         applied = settings.aiSponsorDetection
         appliedAutoSkip = settings.aiSponsorAutoSkip
+        appliedHideMarkers = settings.hideMarkersInFullscreen
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = Self.requestTimeout
         configuration.timeoutIntervalForResource = Self.resourceTimeout
@@ -107,6 +109,7 @@ final class SponsorDetectionService {
         withObservationTracking {
             _ = settings.aiSponsorDetection
             _ = settings.aiSponsorAutoSkip
+            _ = settings.hideMarkersInFullscreen
             _ = settings.sponsorBlockEnabled
             _ = settings.sponsorBlockCategories
         } onChange: { [weak self] in
@@ -124,13 +127,17 @@ final class SponsorDetectionService {
         applied = enabled
         let autoSkipChanged = settings.aiSponsorAutoSkip != appliedAutoSkip
         appliedAutoSkip = settings.aiSponsorAutoSkip
+        let hideMarkersChanged = settings.hideMarkersInFullscreen != appliedHideMarkers
+        appliedHideMarkers = settings.hideMarkersInFullscreen
         guard session.request != nil, let current, !current.isLive else { return }
-        if enabled, autoSkipChanged, inFlight[current.videoId] == nil,
+        if enabled, autoSkipChanged || hideMarkersChanged, inFlight[current.videoId] == nil,
            let shown = board?.suggested, shown.videoId == current.videoId {
             // Only the mode changed: re-send what is shown (a running task sends with the new mode).
             send(videoId: current.videoId, segments: shown.segments)
             return
         }
+        // Only the full-screen marks setting changed and nothing is shown: nothing to re-run.
+        if hideMarkersChanged, !toggled, !autoSkipChanged { return }
         if !enabled {
             guard toggled else { return }
             for task in inFlight.values { task.cancel() }
@@ -336,7 +343,8 @@ final class SponsorDetectionService {
     private func send(videoId: String, segments: [SkipSegment]) {
         let autoSkip = settings.aiSponsorAutoSkip
         board?.sentSuggestions(videoId: videoId, segments: segments, autoSkip: autoSkip)
-        let command = JSCommand.suggestedSegments(videoId: videoId, segments: segments, autoSkip: autoSkip)
+        let command = JSCommand.suggestedSegments(videoId: videoId, segments: segments, autoSkip: autoSkip,
+                                                  hideMarkersInFullscreen: settings.hideMarkersInFullscreen)
         Task { [player, log] in
             do {
                 try await player.send(command)

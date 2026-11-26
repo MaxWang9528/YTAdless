@@ -38,7 +38,7 @@ final class SponsorBlockService {
     /// The player's current video (from its last videoMeta): id and whether it is live.
     private var current: (videoId: String, isLive: Bool)?
     /// Settings last acted on, so a change that doesn't alter them does nothing.
-    private var applied: (enabled: Bool, categories: Set<SponsorBlock.Category>, autoSkip: Bool)
+    private var applied: (enabled: Bool, categories: Set<SponsorBlock.Category>, autoSkip: Bool, hideMarkers: Bool)
     /// Cache key ("<videoId>|<categories>") → segments, most recent last.
     private var cache: [String: [SkipSegment]] = [:]
     private var cacheOrder: [String] = []
@@ -51,7 +51,8 @@ final class SponsorBlockService {
         self.hub = hub
         self.settings = settings
         self.log = log
-        applied = (settings.sponsorBlockEnabled, settings.sponsorBlockCategories, settings.sponsorBlockAutoSkip)
+        applied = (settings.sponsorBlockEnabled, settings.sponsorBlockCategories, settings.sponsorBlockAutoSkip,
+                   settings.hideMarkersInFullscreen)
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = Self.requestTimeout
         configuration.timeoutIntervalForResource = Self.resourceTimeout
@@ -84,6 +85,7 @@ final class SponsorBlockService {
             _ = settings.sponsorBlockEnabled
             _ = settings.sponsorBlockCategories
             _ = settings.sponsorBlockAutoSkip
+            _ = settings.hideMarkersInFullscreen
         } onChange: { [weak self] in
             // Fires before the new value is stored: read it on the next main-actor turn.
             Task { @MainActor [weak self] in
@@ -97,9 +99,11 @@ final class SponsorBlockService {
         let enabled = settings.sponsorBlockEnabled
         let categories = settings.sponsorBlockCategories
         let autoSkip = settings.sponsorBlockAutoSkip
+        let hideMarkers = settings.hideMarkersInFullscreen
         guard enabled != applied.enabled || categories != applied.categories || autoSkip != applied.autoSkip
+                || hideMarkers != applied.hideMarkers
         else { return }
-        applied = (enabled, categories, autoSkip)
+        applied = (enabled, categories, autoSkip, hideMarkers)
         guard session.request != nil, let current, !current.isLive else { return }
         if enabled {
             update(videoId: current.videoId)
@@ -188,7 +192,8 @@ final class SponsorBlockService {
     private func send(videoId: String, segments: [SkipSegment]) {
         let autoSkip = settings.sponsorBlockAutoSkip
         board?.sentSponsorBlock(videoId: videoId, segments: segments, autoSkip: autoSkip)
-        let command = JSCommand.sponsorSegments(videoId: videoId, segments: segments, autoSkip: autoSkip)
+        let command = JSCommand.sponsorSegments(videoId: videoId, segments: segments, autoSkip: autoSkip,
+                                                hideMarkersInFullscreen: settings.hideMarkersInFullscreen)
         Task { [player, log] in
             do {
                 try await player.send(command)

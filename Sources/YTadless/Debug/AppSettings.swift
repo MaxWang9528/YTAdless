@@ -9,10 +9,12 @@
 //   hideAdElements      → WebViewStore.applyContentRules (adds/removes the compiled rule lists)
 //   keepScreenAwake     → DebugEntryView sets UIApplication.isIdleTimerDisabled while playing
 //   debugButtonOffset   → DebugEntryView's vertical position
+//   showsDebugButton    → DebugEntryView draws the button (when off, shaking the iPhone opens Debug)
 //   sponsorBlockEnabled /
 //   sponsorBlockCategories → SponsorBlockService (Module D) observes them and re-sends segments
 //   aiSponsorDetection  → SponsorDetectionService (Module D): on-device guesses when SponsorBlock has none
 //   sponsorBlockAutoSkip / aiSponsorAutoSkip → the services send them as `autoSkip` (Skip button when off)
+//   hideMarkersInFullscreen → both services send it as `hideMarkersInFullscreen` (sponsorblock.js)
 // Defaults reproduce the app's behaviour before settings existed.
 
 import SwiftUI
@@ -47,6 +49,8 @@ final class AppSettings {
     var keepScreenAwake: Bool { didSet { save(keepScreenAwake, .keepScreenAwake) } }
     /// Vertical offset of the Debug button from its starting point (points).
     var debugButtonOffset: Double { didSet { save(debugButtonOffset, .debugButtonOffset) } }
+    /// On by default. Off hides the Debug button; shaking the iPhone still opens the panel.
+    var showsDebugButton: Bool { didSet { save(showsDebugButton, .showsDebugButton) } }
     /// Off by default: when on, a 4-char SHA-256 prefix of each video ID goes to sponsor.ajay.app.
     var sponsorBlockEnabled: Bool { didSet { save(sponsorBlockEnabled, .sponsorBlockEnabled) } }
     /// Enabled SponsorBlock categories, persisted as their API names.
@@ -60,6 +64,8 @@ final class AppSettings {
     var sponsorBlockAutoSkip: Bool { didSet { save(sponsorBlockAutoSkip, .sponsorBlockAutoSkip) } }
     /// Off by default: on-device guesses show a Skip button instead of being skipped.
     var aiSponsorAutoSkip: Bool { didSet { save(aiSponsorAutoSkip, .aiSponsorAutoSkip) } }
+    /// Off by default: on hides SponsorBlock and on-device marks on the seek bar in the app's full screen.
+    var hideMarkersInFullscreen: Bool { didSet { save(hideMarkersInFullscreen, .hideMarkersInFullscreen) } }
 
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private var windowObserver: NSObjectProtocol?
@@ -68,7 +74,7 @@ final class AppSettings {
         case appearance, miniWidthFraction, miniCornerRadius, miniMargin, showsMiniProgress, dragDistance
         case videoSwipeToMinimize, blockAdRequests, hideAdElements, keepScreenAwake, debugButtonOffset
         case sponsorBlockEnabled, sponsorBlockCategories, aiSponsorDetection
-        case sponsorBlockAutoSkip, aiSponsorAutoSkip
+        case sponsorBlockAutoSkip, aiSponsorAutoSkip, showsDebugButton, hideMarkersInFullscreen
         var name: String { "ytadless.settings." + rawValue }
     }
 
@@ -92,6 +98,8 @@ final class AppSettings {
         aiSponsorDetection = Self.bool(defaults, .aiSponsorDetection) ?? false
         sponsorBlockAutoSkip = Self.bool(defaults, .sponsorBlockAutoSkip) ?? false
         aiSponsorAutoSkip = Self.bool(defaults, .aiSponsorAutoSkip) ?? false
+        showsDebugButton = Self.bool(defaults, .showsDebugButton) ?? true
+        hideMarkersInFullscreen = Self.bool(defaults, .hideMarkersInFullscreen) ?? false
         // A window that appears later (a new scene) gets the current appearance too.
         windowObserver = NotificationCenter.default.addObserver(
             forName: UIWindow.didBecomeVisibleNotification, object: nil, queue: .main
@@ -126,6 +134,8 @@ final class AppSettings {
         aiSponsorDetection = false
         sponsorBlockAutoSkip = false
         aiSponsorAutoSkip = false
+        showsDebugButton = true
+        hideMarkersInFullscreen = false
     }
 
     /// Sets the style on every window of every scene. Called at launch and on change.

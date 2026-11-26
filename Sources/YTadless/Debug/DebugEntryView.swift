@@ -3,7 +3,8 @@
 // RootView overlays this view over the whole screen, above the player. It draws one small
 // button on the leading edge (drag it up or down to move it) with a badge for unseen script
 // errors; everything else is empty layout space, which SwiftUI doesn't hit-test, so touches pass
-// through to the webviews. The button opens the Debug panel as a sheet.
+// through to the webviews. The button opens the Debug panel as a sheet. Settings › Show Debug
+// button can hide it; shaking the iPhone opens the panel either way (`UIWindow.motionEnded` below).
 
 import SwiftUI
 import UIKit
@@ -37,6 +38,9 @@ struct DebugEntryView: View {
             let limit = max(0, geometry.size.height / 2 - Self.size)
             let start = geometry.size.height * Self.initialOffsetFraction
             button
+                .opacity(settings.showsDebugButton ? 1 : 0)
+                .allowsHitTesting(settings.showsDebugButton)
+                .accessibilityHidden(!settings.showsDebugButton)
                 .offset(y: min(limit, max(-limit, start + offset)))
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         }
@@ -45,6 +49,11 @@ struct DebugEntryView: View {
         }
         // This overlay exists from launch, so it applies the settings that live outside a view.
         .onAppear { settings.applyAppearance() }
+        .onReceive(NotificationCenter.default.publisher(for: .ytadlessDeviceShaken)) { _ in
+            guard !showsPanel else { return }
+            store.debugLog.markErrorsSeen()
+            showsPanel = true
+        }
         .onChange(of: keepsScreenAwake, initial: true) { _, awake in
             UIApplication.shared.isIdleTimerDisabled = awake
         }
@@ -92,5 +101,21 @@ struct DebugEntryView: View {
             )
             .accessibilityLabel(unseen > 0 ? "Debug, \(unseen) new script errors" : "Debug")
             .accessibilityAddTraits(.isButton)
+    }
+}
+
+extension Notification.Name {
+    /// Posted by `UIWindow.motionEnded` on a shake; DebugEntryView opens the Debug panel.
+    static let ytadlessDeviceShaken = Notification.Name("ytadless.deviceShaken")
+}
+
+extension UIWindow {
+    // Shake reaches the window at the end of the responder chain when nothing else handles it
+    // (WKWebView doesn't). The only way into Debug and Settings when the button is hidden.
+    open override func motionEnded(_ motion: UIEvent.EventSubtype, with event: UIEvent?) {
+        if motion == .motionShake {
+            NotificationCenter.default.post(name: .ytadlessDeviceShaken, object: nil)
+        }
+        super.motionEnded(motion, with: event)
     }
 }

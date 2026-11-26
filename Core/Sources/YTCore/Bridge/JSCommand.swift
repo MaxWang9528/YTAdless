@@ -31,7 +31,9 @@ public enum JSCommand: Equatable, Sendable {
     /// off, or no segments). Native re-sends it after every player load (D15). `autoSkip` (added
     /// 2026-11-25 with the user's approval): true = skip with an Undo toast, false = show a Skip
     /// button when the playhead enters a segment. JS treats a missing field as true.
-    case sponsorSegments(videoId: String, segments: [SkipSegment], autoSkip: Bool = true)
+    /// `hideMarkersInFullscreen` (added 2026-11-25, *pending user approval*): Settings › Hide
+    /// segment marks in full screen. Sent only when true, so a missing field means false.
+    case sponsorSegments(videoId: String, segments: [SkipSegment], autoSkip: Bool = true, hideMarkersInFullscreen: Bool = false)
     /// Asks sponsorblock.js for the current video's caption tracks (from its playerResponse) →
     /// `{videoId, tracks: [{baseUrl, languageCode, kind, name}]}`; `baseUrl` is absolute.
     /// Added 2026-11-25 with the user's approval (on-device sponsor detection).
@@ -40,7 +42,8 @@ public enum JSCommand: Equatable, Sendable {
     /// shows them as dashed marks. `autoSkip` false (and a missing field in JS) = a Skip button,
     /// true = skipped like SponsorBlock segments, with Undo. Empty = none.
     /// Added 2026-11-25 with the user's approval (`autoSkip` too).
-    case suggestedSegments(videoId: String, segments: [SkipSegment], autoSkip: Bool = false)
+    /// `hideMarkersInFullscreen`: as for `sponsorSegments` (pending user approval).
+    case suggestedSegments(videoId: String, segments: [SkipSegment], autoSkip: Bool = false, hideMarkersInFullscreen: Bool = false)
 
     /// The function body passed to `callAsyncJavaScript`. It reads the two named arguments
     /// `name` and `args`; it never contains data.
@@ -78,15 +81,17 @@ public enum JSCommand: Equatable, Sendable {
         case .audioInterruption(let began, let shouldResume):
             object = ["phase": began ? "began" : "ended", "shouldResume": shouldResume]
         case .layout(let mode): object = ["mode": mode.rawValue]
-        case .sponsorSegments(let videoId, let segments, let autoSkip),
-             .suggestedSegments(let videoId, let segments, let autoSkip):
-            object = [
+        case .sponsorSegments(let videoId, let segments, let autoSkip, let hideMarkers),
+             .suggestedSegments(let videoId, let segments, let autoSkip, let hideMarkers):
+            var fields: [String: Any] = [
                 "videoId": videoId,
                 "autoSkip": autoSkip,
                 "segments": segments.map {
                     ["start": Self.finite($0.start), "end": Self.finite($0.end), "category": $0.category] as [String: Any]
                 },
             ]
+            if hideMarkers { fields["hideMarkersInFullscreen"] = true }
+            object = fields
         }
         guard let data = try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys]),
               let json = String(data: data, encoding: .utf8)

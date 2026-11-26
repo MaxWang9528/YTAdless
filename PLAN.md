@@ -266,6 +266,12 @@ Arguments always travel as a JSON string, never interpolated into source.
 | `captionTracks` | — → `{videoId: string\|null, tracks: [{baseUrl, languageCode, kind, name}], client: {clientVersion, signatureTimestamp}\|null}` (`baseUrl` absolute; `kind` is `'asr'` for auto-captions, else `''`; `client` is the page's ytcfg `INNERTUBE_CLIENT_VERSION`/`STS` for D's `/youtubei/v1/player` fallback, added 2026-11-25, **pending user approval**) | sponsorblock.js (D) | D's on-device sponsor detection (added 2026-11-25, user-approved) |
 | `suggestedSegments` | `{videoId, segments: [{start, end, category}], autoSkip}` → `{ok: true, count}`; shown with a Skip button, or skipped with Undo when `autoSkip` is true (missing = false; `autoSkip` on both added 2026-11-25, user-approved) | sponsorblock.js (D) | D's on-device sponsor detection (added 2026-11-25, user-approved) |
 
+Both segment commands also take an optional `hideMarkersInFullscreen: true` (added 2026-11-25,
+**pending user approval**): Settings › Hide segment marks in full screen. Native sends it only when
+the setting is on (missing = false) and re-sends on a change; the latest command's value wins.
+sponsorblock.js then hides its seek-bar marks (not the Skip/Undo toast) while layout.js's video-mode
+class is on `<html>` in a landscape viewport, i.e. the app's own full screen.
+
 ### 5.5 Swift contracts (Phase 0 writes every signature; owners fill in bodies)
 
 Every public struct has an explicit `public init` with defaults for its optional fields, so the

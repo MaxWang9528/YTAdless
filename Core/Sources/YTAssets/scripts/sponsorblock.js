@@ -13,6 +13,9 @@
 //            true = skipped automatically with an Undo toast; false = from its start (a suggestion:
 //            PROMPT_LEAD_S, 3 s, before it) until its end, a toast offers Skip ("Sponsor" or "Possible sponsor"; once per segment per load,
 //            seeking back before its start re-arms it). Nothing with autoSkip false is skipped untapped.
+//            `hideMarkersInFullscreen` (optional boolean on both; missing = false; pending user
+//            approval): Settings › Hide segment marks in full screen. The latest command's value wins;
+//            true hides the seek-bar marks (not the Skip/Undo toast) in the app's landscape full screen.
 //            `captionTracks {}` → {videoId: string|null, tracks: [{baseUrl, languageCode, kind, name}],
 //            client: {clientVersion, signatureTimestamp} | null} for the page's current video, from the `playerResponse` event (per-video cache, so a
 //            prefetch of the next video doesn't replace it) or window.ytInitialPlayerResponse.
@@ -98,6 +101,12 @@
     // 923 px player): the track runs from x≈62 to x≈845 (the knob at 30:39/30:39).
     DEFAULT_BAR_INSETS: Object.freeze({ left: 0.067, right: 0.085 }),
     MARKERS_ID: 'ytadless-sponsorblock-markers',
+    // Settings › Hide segment marks in full screen. "Full screen" = the app's own landscape full
+    // screen: layout.js CONFIG.ROOT_CLASS ('ytadless-layout-video', video mode) on <html> in a
+    // landscape viewport. Video mode in portrait is the mini player, whose controls are hidden anyway.
+    HIDE_MARKERS_CLASS: 'ytadless-sb-hide-markers-fs',
+    FULLSCREEN_ROOT_CLASS: 'ytadless-layout-video',
+    HIDE_MARKERS_STYLE_ID: 'ytadless-sponsorblock-style',
     FALLBACK_STRIP_PX: 3,       // height of the strip along the player's bottom edge
     MARKER_OPACITY: '0.85',
     MARKER_CHECK_MS: 1000,      // re-find the bar at most this often (YouTube re-renders controls)
@@ -726,6 +735,7 @@
     ns.command('captionTracks', () => captionTracks());
 
     ns.command('suggestedSegments', (args) => {
+      applyHideMarkers(args);  // a setting, not per video: applied before the video check
       const id = currentId(args, 'suggestedSegments');
       if (id === null) return { ok: true, count: 0 };
       if (id !== suggestVideoId) {
@@ -742,7 +752,23 @@
       return { ok: true, count: suggestions.length };
     });
 
+    // One stylesheet, added once; the class on <html> turns it on.
+    function applyHideMarkers(args) {
+      const hide = !!args && args.hideMarkersInFullscreen === true;
+      const root = document.documentElement;
+      if (!root) return;
+      if (hide && !document.getElementById(CONFIG.HIDE_MARKERS_STYLE_ID)) {
+        const style = document.createElement('style');
+        style.id = CONFIG.HIDE_MARKERS_STYLE_ID;
+        style.textContent = '@media (orientation: landscape) { html.' + CONFIG.HIDE_MARKERS_CLASS + '.' +
+          CONFIG.FULLSCREEN_ROOT_CLASS + ' #' + CONFIG.MARKERS_ID + ' { display: none !important; } }';
+        (document.head || root).appendChild(style);
+      }
+      root.classList.toggle(CONFIG.HIDE_MARKERS_CLASS, hide);
+    }
+
     ns.command('sponsorSegments', (args) => {
+      applyHideMarkers(args);  // a setting, not per video: applied before the video check
       const id = currentId(args, 'sponsorSegments');
       if (id === null) return { ok: true, count: 0 };
       if (id !== videoId) {
