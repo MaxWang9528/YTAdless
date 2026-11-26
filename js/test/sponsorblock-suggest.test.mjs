@@ -54,7 +54,29 @@ const track = (lang, extra = {}) => ({
 test('sponsorblock.js › captionTracks commands.json vector › answers the page video with a tracks array', async (t) => {
   const { page } = await sbPage(t);
   const vector = commandVectors().commands.find((c) => c.name === 'captionTracks');
-  assert.deepEqual(await page.cmd(vector.name, vector.args), { videoId: ID, tracks: [] });
+  assert.deepEqual(await page.cmd(vector.name, vector.args), { videoId: ID, tracks: [], client: null });
+  assertAll(page);
+});
+
+// Watch-page caption URLs need a PO token (exp=…,xpe), so native asks /player with the page's
+// client values (fixture html/2026-11-24-watch-0e3GPea1Tyg.html ytcfg).
+test('sponsorblock.js › captionTracks with ytcfg › client version and signatureTimestamp for /player', async (t) => {
+  const { page, win } = await sbPage(t);
+  const data = { INNERTUBE_CLIENT_VERSION: '2.20261123.09.00', STS: 20779 };
+  win.ytcfg = { data_: data, get: (k) => data[k] };
+  assert.deepEqual((await page.cmd('captionTracks', {})).client, { clientVersion: '2.20261123.09.00', signatureTimestamp: 20779 });
+  win.ytcfg = { data_: { INNERTUBE_CLIENT_VERSION: '2.1', STS: '123' } };  // no get(): data_, STS as a string
+  assert.deepEqual((await page.cmd('captionTracks', {})).client, { clientVersion: '2.1', signatureTimestamp: 123 });
+  for (const bad of [
+    { get: () => { throw new Error('boom'); } },
+    { data_: { INNERTUBE_CLIENT_VERSION: '2.1"', STS: 1 } },
+    { data_: { INNERTUBE_CLIENT_VERSION: '2.1', STS: 0 } },
+    { data_: { STS: 5 } },
+    'nope',
+  ]) {
+    win.ytcfg = bad;
+    assert.equal((await page.cmd('captionTracks', {})).client, null, JSON.stringify(bad));
+  }
   assertAll(page);
 });
 
@@ -131,11 +153,12 @@ test('sponsorblock.js › captionTracks after a prefetch of the next video › s
 test('sponsorblock.js › captionTracks with no event seen › ytInitialPlayerResponse fallback (this video only)', async (t) => {
   const { page, win } = await sbPage(t);
   win.ytInitialPlayerResponse = prWithTracks(win, OTHER, [track('de')]);
-  assert.deepEqual(await page.cmd('captionTracks', {}), { videoId: ID, tracks: [] }, 'another video: not used');
+  assert.deepEqual(await page.cmd('captionTracks', {}), { videoId: ID, tracks: [], client: null }, 'another video: not used');
   win.ytInitialPlayerResponse = prWithTracks(win, ID, [{ ...track('en'), name: { runs: [{ text: 'Eng' }, { text: 'lish' }] } }]);
   assert.deepEqual(await page.cmd('captionTracks', {}), {
     videoId: ID,
     tracks: [{ baseUrl: 'https://m.youtube.com/api/timedtext?v=x&lang=en', languageCode: 'en', kind: '', name: 'English' }],
+    client: null,
   });
   assertAll(page);
 });
@@ -146,9 +169,9 @@ test('sponsorblock.js › captionTracks with no captions anywhere › tracks [] 
   ns.emit('playerResponse', null, { source: 'fetch', url: 'x' });
   ns.emit('playerResponse', win.JSON.parse('{"captions":{"playerCaptionsTracklistRenderer":{"captionTracks":"nope"}}}'), { source: 'fetch', url: 'x' });
   win.ytInitialPlayerResponse = 'garbage';
-  assert.deepEqual(await page.cmd('captionTracks', {}), { videoId: ID, tracks: [] });
+  assert.deepEqual(await page.cmd('captionTracks', {}), { videoId: ID, tracks: [], client: null });
   win.history.pushState({}, '', '/feed/subscriptions');
-  assert.deepEqual(await page.cmd('captionTracks', {}), { videoId: null, tracks: [] });
+  assert.deepEqual(await page.cmd('captionTracks', {}), { videoId: null, tracks: [], client: null });
   assertAll(page);
 });
 

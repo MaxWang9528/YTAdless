@@ -13,11 +13,14 @@
 //            true = skipped automatically with an Undo toast; false = from PROMPT_LEAD_S (3 s) before
 //            its start, a toast offers Skip ("Sponsor" or "Possible sponsor"; once per segment per load,
 //            seeking back before its start re-arms it). Nothing with autoSkip false is skipped untapped.
-//            `captionTracks {}` → {videoId: string|null, tracks: [{baseUrl, languageCode, kind, name}]}
-//            for the page's current video, from the `playerResponse` event (per-video cache, so a
+//            `captionTracks {}` → {videoId: string|null, tracks: [{baseUrl, languageCode, kind, name}],
+//            client: {clientVersion, signatureTimestamp} | null} for the page's current video, from the `playerResponse` event (per-video cache, so a
 //            prefetch of the next video doesn't replace it) or window.ytInitialPlayerResponse.
 //            baseUrl is absolute and only ever https://{m.,www.,}youtube.com/api/timedtext…;
 //            kind is 'asr' or ''; name is plain text. No tracks → tracks: [] (never an error).
+//            `client` is the page's ytcfg MWEB client version and signatureTimestamp (null when
+//            missing): watch-page caption URLs need a PO token (`exp=…,xpe` → timedtext answers
+//            200 with 0 bytes, 2026-11-25), so native asks /youtubei/v1/player for token-free ones.
 //   listens  `videoElement` (player-bridge.js) for re-attachments; also looks the video up itself,
 //            because that event doesn't replay emissions from before this file's listener.
 //            `playerResponse` (hooks.js) for caption tracks.
@@ -125,6 +128,11 @@
     CAPTION_CACHE_SIZE: 8,      // videos remembered (prefetch of the next video; player-bridge.js META_CACHE_SIZE)
     MAX_CAPTION_TRACKS: 100,    // the 2026-11-24 fixtures have 6–18
     MAX_CAPTION_TEXT_CHARS: 200,
+    // ytcfg keys for native's /youtubei/v1/player fallback (watch fixture
+    // html/2026-11-24-watch-0e3GPea1Tyg.html: "INNERTUBE_CLIENT_VERSION":"2.20261123.09.00", "STS":20779).
+    YTCFG_CLIENT_VERSION: 'INNERTUBE_CLIENT_VERSION',
+    YTCFG_STS: 'STS',
+    CLIENT_VERSION: /^[0-9.]{1,40}$/,
     // Labels (SponsorBlock categories: https://wiki.sponsor.ajay.app/w/Types, read 2026-11-25).
     CATEGORY_LABELS: Object.freeze({
       sponsor: 'sponsor',
@@ -647,9 +655,27 @@
       if (found) rememberCaptions(found);
     }));
 
+    // {clientVersion, signatureTimestamp} from the page's ytcfg, or null.
+    function innertubeClient() {
+      const cfg = window.ytcfg;
+      if (!cfg || typeof cfg !== 'object') return null;
+      const read = (key) => {
+        try {
+          if (typeof cfg.get === 'function') return cfg.get(key);
+        } catch (_) { /* fall through to data_ */ }
+        return cfg.data_ && typeof cfg.data_ === 'object' ? cfg.data_[key] : undefined;
+      };
+      const clientVersion = read(CONFIG.YTCFG_CLIENT_VERSION);
+      const sts = Number(read(CONFIG.YTCFG_STS));
+      if (typeof clientVersion !== 'string' || !CONFIG.CLIENT_VERSION.test(clientVersion)) return null;
+      if (!Number.isInteger(sts) || sts <= 0) return null;
+      return { clientVersion, signatureTimestamp: sts };
+    }
+
     function captionTracks() {
       const id = pageVideoId();
-      if (id === null) return { videoId: null, tracks: [] };
+      const client = innertubeClient();
+      if (id === null) return { videoId: null, tracks: [], client };
       let tracks = captionCache.get(id);
       if (!tracks) {
         // No event for this video (yet): the inline player response, when it is this video's.
@@ -657,7 +683,7 @@
         try { initial = captionsFromPlayerResponse(window.ytInitialPlayerResponse); } catch (_) { /* none */ }
         if (initial && initial.videoId === id) tracks = initial.tracks;
       }
-      return { videoId: id, tracks: (tracks || []).map((track) => ({ ...track })) };
+      return { videoId: id, tracks: (tracks || []).map((track) => ({ ...track })), client };
     }
 
     // ── commands ────────────────────────────────────────────────────────────────────────────

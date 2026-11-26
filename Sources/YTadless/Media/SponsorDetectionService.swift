@@ -6,8 +6,12 @@
 //      (and clear any earlier guesses). A failed SponsorBlock lookup counts as "nothing".
 //   2. Check the model (Apple Intelligence may be off, or the device not eligible).
 //   3. `captionTracks` → decode (YTCore Captions) → choose an English track → GET
-//      `baseUrl&fmt=json3` over an ephemeral URLSession (no cookies; anonymous works, checked
-//      2026-11-25) → SponsorDetector (FoundationModels, off the main actor).
+//      `baseUrl&fmt=json3` over an ephemeral URLSession (no cookies). Watch-page tracks carry
+//      `exp=…,xpe` and answer 200 with 0 bytes without a PO token (checked 2026-11-25), so for
+//      those, or when the page's track comes back empty, native POSTs an anonymous MWEB
+//      /youtubei/v1/player with the page's ytcfg client version + signatureTimestamp and uses
+//      its token-free tracks (YTCore InnertubeCaptions) → SponsorDetector (FoundationModels,
+//      off the main actor). When both fail, one log line names every step that failed.
 //   4. Cache the result per video (LRU of 32, including "none found") and send
 //      `suggestedSegments` with `autoSkip` = Settings › "Skip automatically" (off by default):
 //      sponsorblock.js shows them as dashed marks with a Skip button, or skips them with Undo.
@@ -15,11 +19,11 @@
 // `videoMeta`. Setting off → in-flight runs are cancelled and empty suggestions sent. Switching
 // videos cancels the old run (a 3-hour podcast shouldn't keep the model busy).
 // Not cached, so they are retried on the next load: no track (the JS handler may be a stub that
-// answers `tracks: []`), an empty transcript (timedtext may one day need a PO token), the model
+// answers `tracks: []`), no transcript from either source, the model
 // being unavailable, fetch failures, and runs where a chunk
 // failed (e.g. while the app was in the background).
-// The transcript never leaves the phone: the only network request is the caption fetch from
-// youtube.com, the same one the page itself would make.
+// The transcript never leaves the phone: the only network requests go to m.youtube.com (the
+// /player lookup and the caption fetch), anonymous, the same ones the page itself makes.
 
 import Foundation
 import Observation
@@ -191,37 +195,9 @@ final class SponsorDetectionService {
             log?.native(.info, Self.source, "\(videoId): page is on \(pageVideo) now; skipped")
             return nil
         }
-        let track: Captions.CaptionTrack
-        switch Captions.chooseTrack(reply.tracks) {
-        case .track(let chosen): track = chosen
-        case .none(let reason):
-            log?.native(.info, Self.source, "\(videoId): skipped: \(reason)")
-            return nil
-        }
-        guard let url = Captions.json3URL(baseUrl: track.baseUrl) else {
-            log?.native(.warn, Self.source, "\(videoId): unexpected caption URL; skipped")
-            return nil
-        }
-
-        // Transcript: fetched right after captionTracks, because baseUrl is signed and expires
-        // (URLs are never cached, only results).
-        let data: Data
-        do {
-            let (body, response) = try await urlSession.data(from: url)
-            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-            guard (200..<300).contains(status) else {
-                log?.native(.warn, Self.source, "\(videoId): transcript HTTP \(status), \(body.count) bytes")
-                return nil
-            }
-            guard !body.isEmpty else {
-                log?.native(.warn, Self.source, "\(videoId): AI: transcript empty (HTTP \(status), 0 bytes) — timedtext may need a PO token")
-                return nil
-            }
-            data = body
-        } catch {
-            if !Task.isCancelled { log?.native(.warn, Self.source, "\(videoId): transcript fetch failed: \(error)") }
-            return nil
-        }
+        // Transcript: the page's track first, unless its URL needs a PO token; then fresh,
+        // token-free tracks from /youtubei/v1/player (YTCore InnertubeCaptions.swift says why).
+        guard let (track, data) = await transcript(videoId: videoId, reply: reply) else { return nil }
         guard !Task.isCancelled else { return nil }
 
         // Model (off the main actor).
@@ -234,8 +210,8 @@ final class SponsorDetectionService {
             return nil
         }
         if outcome.cueCount == 0 {
-            // Not "no captions": the page listed a track, but timedtext sent no text. Not cached.
-            log?.native(.warn, Self.source, "\(videoId): AI: transcript empty (\(data.count) bytes, 0 lines) — timedtext may need a PO token")
+            // transcript() already checked for lines; not cached.
+            log?.native(.warn, Self.source, "\(videoId): AI: no transcript — \(track.languageCode) json3 had 0 lines")
             return nil
         }
         if Task.isCancelled {
@@ -249,6 +225,109 @@ final class SponsorDetectionService {
         log?.native(.info, Self.source,
                     "\(videoId): \(outcome.report.summary) (\(track.languageCode) \(kind), \(outcome.cueCount) lines)")
         return Outcome(segments: outcome.report.segments, cacheable: outcome.report.failed == 0)
+    }
+
+    // MARK: Transcript
+
+    /// What one json3 fetch gave.
+    private enum Fetched {
+        case transcript(Data)
+        /// Why not, for the log ("HTTP 403 …", "empty body …", "0 caption lines …").
+        case failed(String)
+    }
+
+    /// The chosen track and its json3 body (with at least one line), or nil, logged with every
+    /// step that failed, so "no transcript" always says why.
+    private func transcript(videoId: String, reply: Captions.CaptionTracksReply) async -> (Captions.CaptionTrack, Data)? {
+        var notes: [String] = []
+        switch Captions.chooseTrack(reply.tracks) {
+        case .track(let track):
+            if Captions.requiresPoToken(baseUrl: track.baseUrl) {
+                notes.append("page track needs a PO token (exp=xpe)")
+            } else {
+                switch await fetchJSON3(track) {
+                case .transcript(let data):
+                    log?.native(.info, Self.source, "\(videoId): transcript from the page's caption track")
+                    return (track, data)
+                case .failed(let why):
+                    notes.append("page track: \(why)")
+                }
+            }
+        case .none(let reason):
+            // Other languages only: /player lists the same tracks.
+            if !reply.tracks.isEmpty {
+                log?.native(.info, Self.source, "\(videoId): skipped: \(reason)")
+                return nil
+            }
+            notes.append("page: \(reason)")
+        }
+        guard !Task.isCancelled else { return nil }
+
+        // Fallback: anonymous MWEB /youtubei/v1/player.
+        let client = reply.client ?? .fallback
+        if reply.client == nil { notes.append("no ytcfg client from the page, used the built-in one") }
+        guard let request = Captions.playerRequest(videoId: videoId, client: client) else {
+            notes.append("/player: bad request values")
+            return giveUp(videoId, notes)
+        }
+        let tracks: [Captions.CaptionTrack]
+        do {
+            var urlRequest = URLRequest(url: request.url)
+            urlRequest.httpMethod = "POST"
+            urlRequest.httpBody = request.body
+            for (name, value) in request.headers { urlRequest.setValue(value, forHTTPHeaderField: name) }
+            let (body, response) = try await urlSession.data(for: urlRequest)
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            guard (200..<300).contains(status) else {
+                notes.append("/player HTTP \(status)")
+                return giveUp(videoId, notes)
+            }
+            tracks = try Captions.captionTracks(fromPlayerResponse: body, videoId: videoId)
+        } catch {
+            if Task.isCancelled { return nil }
+            notes.append("/player: \(error)")
+            return giveUp(videoId, notes)
+        }
+        let track: Captions.CaptionTrack
+        switch Captions.chooseTrack(tracks) {
+        case .track(let chosen): track = chosen
+        case .none(let reason):
+            notes.append("/player: \(reason)")
+            return giveUp(videoId, notes)
+        }
+        switch await fetchJSON3(track) {
+        case .transcript(let data):
+            log?.native(.info, Self.source, "\(videoId): transcript via /player (\(notes.joined(separator: "; ")))")
+            return (track, data)
+        case .failed(let why):
+            notes.append("/player track: \(why)")
+            return giveUp(videoId, notes)
+        }
+    }
+
+    private func giveUp(_ videoId: String, _ notes: [String]) -> (Captions.CaptionTrack, Data)? {
+        if !Task.isCancelled {
+            log?.native(.warn, Self.source, "\(videoId): AI: no transcript — \(notes.joined(separator: "; "))")
+        }
+        return nil
+    }
+
+    /// GET `baseUrl&fmt=json3` right away (signed, short-lived URLs: results are cached, URLs never)
+    /// and check that it has caption lines (parsed off the main actor).
+    private func fetchJSON3(_ track: Captions.CaptionTrack) async -> Fetched {
+        guard let url = Captions.json3URL(baseUrl: track.baseUrl) else { return .failed("unexpected caption URL") }
+        do {
+            let (body, response) = try await urlSession.data(from: url)
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            guard (200..<300).contains(status) else { return .failed("HTTP \(status), \(body.count) bytes") }
+            guard !body.isEmpty else { return .failed("HTTP \(status) with an empty body (wants a PO token?)") }
+            let lines = await Task.detached(priority: .utility) { (try? Captions.cues(fromJSON3: body))?.count }.value
+            guard let lines else { return .failed("not json3 (\(body.count) bytes)") }
+            guard lines > 0 else { return .failed("0 caption lines in \(body.count) bytes") }
+            return .transcript(body)
+        } catch {
+            return .failed("fetch failed: \(error.localizedDescription)")
+        }
     }
 
     /// Debug › Segments shows what was last sent (set by MediaCoordinator).
